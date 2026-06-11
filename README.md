@@ -61,6 +61,19 @@ Independent lane observation (refuses to claim a lane it didn't watch run):
 reports `metal-observed` for this prover and `cpu-observed` for stock, from the
 runtime logs' module paths.
 
+### CI and where the Metal lane is validated
+
+GitHub-hosted macOS runners are virtualized and do **not** expose a Metal GPU
+that meets risc0's requirement (`MTLArgumentBuffersTier::Tier2`), so the Metal
+lane cannot run there. CI on hosted runners therefore validates what it can: the
+patched stack **builds** (Metal shaders included) and the **CPU lane proves and
+verifies**. The Metal lane is validated on **real Apple Silicon hardware** — the
+controlled benchmark and the `metal-observed` + `RECEIPT VERIFIED` evidence were
+produced on an M4 Max and are committed (see RESULT.md, bench/, and the
+r0-metal-doctor evidence). A second, opt-in CI job runs the full Metal
+validation on a self-hosted arm64 macOS runner (set repo variable
+`APPLE_SILICON_SELF_HOSTED=true`).
+
 ## How it works
 
 risc0 splits proving across a trait boundary. The generic `Hal` (NTT, FRI,
