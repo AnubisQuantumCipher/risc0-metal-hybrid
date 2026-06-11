@@ -1,2 +1,4 @@
 target/
 **/target/
+vendor/risc0-circuit-rv32im/target/
+e2e/target/

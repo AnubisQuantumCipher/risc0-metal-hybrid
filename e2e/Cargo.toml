@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = ["host", "methods"]
+
+# Always optimize; building and running the guest takes much longer without optimization.
+[profile.dev]
+opt-level = 3
+
+[profile.release]
+debug = 1
+lto = true
+
+# Use the locally vendored rv32im circuit crate, which adds the Metal hybrid
+# segment prover (Metal generic ops + CPU circuit kernels over shared buffers).
+[patch.crates-io]
+risc0-circuit-rv32im = { path = "../vendor/risc0-circuit-rv32im" }

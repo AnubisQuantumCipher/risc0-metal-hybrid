@@ -1,0 +1,13 @@
+[package]
+name = "host"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+methods = { path = "../methods" }
+risc0-zkvm = { version = "=3.0.5", features = ["prove"] }
+# Force the `metal` feature on the (patched) circuit crate so its segment_prover()
+# selects the Metal hybrid lane on Apple Silicon.
+risc0-circuit-rv32im = { version = "=4.0.4", features = ["metal", "prove"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = "1.0"
