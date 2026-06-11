@@ -46,11 +46,14 @@ real proving work. The bar for "it works" is a receipt that **verifies**.
 - **M1 — hybrid circuit HAL.** Vendor `risc0-circuit-rv32im`, add a
   `MetalCircuitHal` implementing the three circuit traits via host round-trip
   to the CPU kernels, plus a `metal` segment-prover factory.
-- **M2 — end-to-end proof + verify.** Patch the host crate to the vendored
-  circuit, run a proof through the hybrid prover, confirm `r0-metal-doctor`
-  observes Metal generic ops, and **verify the receipt**.
+- **M1 — hybrid circuit HAL. DONE.** `vendor/risc0-circuit-rv32im` with
+  `src/prove/hal/metal.rs`: `MetalCircuitHal` over `MetalHalPoseidon2`,
+  delegating the circuit kernels to CPU C++ over shared buffers.
+- **M2 — end-to-end proof + verify. DONE, verified.** See [RESULT.md](RESULT.md).
+  The hybrid prover ran a real zkVM proof: `r0-metal-doctor` observed
+  **`metal-observed`** (26 generic-HAL GPU op lines), and the stock verifier
+  returned **`RECEIPT VERIFIED`** (exit 0). risc0 proving used the Apple Silicon
+  GPU and produced a valid proof.
 
-Honest scope note: M2 is ambitious for one session — many integration details
-(prover-pipeline wiring, hash-suite consistency, buffer layout) must line up for
-a receipt to verify. Progress is reported by evidence, and any blocker is
-reported with the exact failure, not papered over.
+All three milestones complete. See [RESULT.md](RESULT.md) for the full result,
+evidence, and honest scope.
