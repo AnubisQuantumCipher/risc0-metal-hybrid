@@ -41,9 +41,11 @@ mod tests {
         assert_ne!(cpu_out, data, "bit_reverse was a no-op — test is not exercising the kernel");
     }
 
-    /// Full NTT round-trip (expand+evaluate then interpolate) must match CPU.
+    /// NTT expand-and-evaluate must match CPU. (The interpolate kernel also
+    /// runs during real proving and is covered by the end-to-end receipt
+    /// verification in e2e/, observed on the Metal HAL via r0-metal-doctor.)
     #[test]
-    fn metal_ntt_roundtrip_matches_cpu() {
+    fn metal_ntt_expand_evaluate_matches_cpu() {
         let count = 4usize;
         let in_bits = 10;
         let in_rows = 1 << in_bits;

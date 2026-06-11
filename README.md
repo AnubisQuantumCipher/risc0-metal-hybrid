@@ -1,61 +1,107 @@
-# metal-hybrid-prover
+# risc0-metal-hybrid
 
-Goal: make RISC Zero proving actually use the Apple Silicon GPU. The earlier
-finding ([r0-metal-doctor](../r0-metal-doctor)) established that risc0 v3.0.5
-proves on the CPU in every reachable configuration. This project builds the
-missing lane.
+Make RISC Zero proving use the Apple Silicon GPU. Today, stock risc0 v3.0.5
+proves entirely on the CPU on every Mac — the shipped `r0vm` binary contains no
+Metal HAL, the `metal` cargo feature forwards nowhere, and the rv32im circuit
+has no Metal lane ([evidence](https://github.com/AnubisQuantumCipher/r0-metal-doctor)).
+This repo fixes that with a **hybrid lane**: the generic STARK operations (NTT,
+FRI, Merkle, hashing — the bulk of proving) run on the GPU via risc0's own
+existing-but-orphaned Metal HAL, while the circuit-specific kernels keep running
+on the CPU, over shared unified-memory buffers. Receipts verify with the
+**stock verifier**.
 
-## The architecture, mapped from source (risc0 v3.0.x)
+**Measured on an M4 Max** (same binary, same guest, 8 controlled runs per lane):
+median **832.7 ms** vs **1489.9 ms** pure-CPU — **1.79×** on the test workload,
+with far lower variance (stdev 8 ms vs 105 ms). Full data and honest scope in
+[RESULT.md](RESULT.md). Do not generalize the number beyond the measured
+workload.
 
-risc0 proving splits across a trait boundary in `risc0-zkp`:
+## Use it (two steps)
 
-- **Generic `Hal`** — NTT, bit-reverse, eltwise, FRI, Merkle, hashing. The
-  expensive, GPU-suited bulk of a STARK prover.
-- **Circuit `CircuitHal<H>` + `CircuitWitnessGenerator<H>`** — the rv32im-specific
-  witgen, eval_check, and accumulate.
+The whole change is a [4-file, ~300-line patch](patches/risc0-circuit-rv32im-4.0.4-metal-hybrid.diff)
+to `risc0-circuit-rv32im` 4.0.4, vendored in this repo.
 
-What ships where, verified by reading the crates:
+**1.** Point your workspace at the patched circuit crate:
 
-| Layer | CPU | CUDA | Metal |
-|---|---|---|---|
-| Generic (`risc0-zkp` + `risc0-sys` kernels) | yes | yes | **yes** — 7 shaders (ntt, poseidon2, fri, eltwise, sha, mix, zk) + 1032-line `metal.rs` HAL |
-| Circuit (`risc0-circuit-rv32im` + `-sys` kernels) | yes (~95K lines C++) | yes (~90K lines CUDA) | **none** |
+```toml
+# workspace Cargo.toml
+[patch.crates-io]
+risc0-circuit-rv32im = { path = "path/to/risc0-metal-hybrid/vendor/risc0-circuit-rv32im" }
+```
 
-So the generic Metal HAL exists and is complete; the circuit Metal lane is
-entirely missing. RISC Zero's own default prover never constructs a Metal HAL
-for Apple Silicon at all.
+**2.** Prove in-process (the external `r0vm` server bypasses local code):
 
-## Strategy: hybrid prover
+```rust
+use risc0_zkvm::{get_prover_server, ExecutorEnv, ProverOpts};
 
-Because `Buffer` exposes `view` / `view_mut` / `to_vec` (host round-trip), a
-prover can run the generic ops natively on `MetalHalPoseidon2` while the
-circuit-specific ops copy their buffers to host and call the EXISTING,
-always-compiled CPU C++ circuit kernels (`risc0_circuit_rv32im_cpu_witgen` /
-`_accum` / `_poly_fp`). Result: NTT/FRI/Merkle/hash on the GPU, eval_check/witgen
-on the CPU — the first risc0 configuration on Apple Silicon where the GPU does
-real proving work. The bar for "it works" is a receipt that **verifies**.
+let prover = get_prover_server(&ProverOpts::default())?;
+let receipt = prover.prove(env, ELF)?.receipt;
+receipt.verify(IMAGE_ID)?;
+```
 
-## Milestones
+That's it. On Apple Silicon the Metal hybrid lane is selected automatically —
+no feature flags, no env vars. `ZKF_DISABLE_METAL=1` forces the CPU lane (handy
+for A/B). Other platforms are untouched (CPU/CUDA as stock).
 
-- **M0 — generic Metal HAL works on this machine. DONE, verified.**
-  `m0-metalhal-smoke/`: builds `risc0-zkp` with `feature=metal`, runs
-  `batch_bit_reverse`, a full `batch_expand_into_evaluate_ntt`, and
-  `eltwise_add_elem` on `MetalHalPoseidon2`, and asserts bit-identical output
-  vs `CpuHal`. 3/3 pass on Apple M4 Max. This proves the generic Metal layer is
-  real and correct — the foundation the hybrid stands on.
-- **M1 — hybrid circuit HAL.** Vendor `risc0-circuit-rv32im`, add a
-  `MetalCircuitHal` implementing the three circuit traits via host round-trip
-  to the CPU kernels, plus a `metal` segment-prover factory.
-- **M1 — hybrid circuit HAL. DONE.** `vendor/risc0-circuit-rv32im` with
-  `src/prove/hal/metal.rs`: `MetalCircuitHal` over `MetalHalPoseidon2`,
-  delegating the circuit kernels to CPU C++ over shared buffers.
-- **M2 — end-to-end proof + verify. DONE, verified.** See [RESULT.md](RESULT.md).
-  The hybrid prover ran a real zkVM proof: `r0-metal-doctor` observed
-  **`metal-observed`** (26 generic-HAL GPU op lines), and the stock verifier
-  returned **`RECEIPT VERIFIED`** (exit 0). risc0 proving used the Apple Silicon
-  GPU and produced a valid proof.
+Requires: `risc0-zkvm = "=3.0.5"` with the `prove` feature, the RISC Zero
+toolchain (rzup), macOS on Apple Silicon.
 
-All three milestones complete, plus a controlled benchmark and automatic
-Apple-Silicon lane selection (no feature flags). See [RESULT.md](RESULT.md) for
-the measured result (median 1.79× vs CPU on the test guest), full scope, and
-setup steps.
+## Verify it yourself
+
+```bash
+cd e2e
+cargo build --release
+./target/release/host                       # lane=metal-hybrid ... RECEIPT VERIFIED
+ZKF_DISABLE_METAL=1 ./target/release/host   # lane=cpu          ... RECEIPT VERIFIED
+./target/release/host bench 8               # in-process benchmark, CSV out
+```
+
+Independent lane observation (refuses to claim a lane it didn't watch run):
+[r0-metal-doctor](https://github.com/AnubisQuantumCipher/r0-metal-doctor)
+reports `metal-observed` for this prover and `cpu-observed` for stock, from the
+runtime logs' module paths.
+
+## How it works
+
+risc0 splits proving across a trait boundary. The generic `Hal` (NTT, FRI,
+Merkle, hash) has a complete Metal implementation in `risc0-zkp` —
+shipped, tested, and unreachable in stock builds. The circuit traits
+(witgen / accumulate / eval_check) have CPU and CUDA kernels only. The hybrid:
+
+- `MetalCircuitHal` ([the new file](vendor/risc0-circuit-rv32im/src/prove/hal/metal.rs))
+  implements the circuit traits for `MetalHalPoseidon2` by calling the
+  always-compiled CPU C++ kernels directly on the Metal buffers' host pointers.
+  Apple Silicon Metal buffers are `StorageModeShared` unified memory, so this is
+  zero-copy: the CPU kernels write the same bytes the GPU reads.
+- `segment_prover()` auto-selects the lane on `macos`/`aarch64` (the branch
+  RISC Zero left commented out in the stock source).
+- The hash suite is `Poseidon2HashSuite` — identical to CPU proving and to the
+  verifier, which is why receipts verify unchanged.
+
+What this is **not**: a full GPU port. The ~90K-line circuit constraint kernels
+still run on CPU. See RESULT.md for the precise GPU/CPU split table.
+
+## Repo layout
+
+| Path | What |
+|---|---|
+| [vendor/risc0-circuit-rv32im/](vendor/risc0-circuit-rv32im/) | Patched circuit crate (Apache-2.0, modification notices per §4(b)) |
+| [patches/](patches/) | The same change as a reviewable diff against pristine 4.0.4 |
+| [e2e/](e2e/) | Working example host + guest + in-process A/B benchmark |
+| [m0-metalhal-smoke/](m0-metalhal-smoke/) | Standalone proof that risc0-zkp's Metal HAL computes bit-identically to CPU (NTT, bit-reverse, eltwise) |
+| [bench/](bench/) | Raw benchmark CSVs from the controlled runs |
+| [RESULT.md](RESULT.md) | Measured results, scope, limitations, honest recommendation |
+
+## Status, honestly
+
+Experimental. Correct on everything tested (every receipt verifies; the M0
+smoke test shows the Metal HAL bit-identical to CPU on the generic ops), and
+faster on the measured workload — but pinned to risc0-zkvm 3.0.5 / circuit
+4.0.4, benchmarked on one machine and one small guest, and distributed as a
+`[patch]` rather than upstream. Related upstream issue:
+[risc0/risc0#3753](https://github.com/risc0/risc0/issues/3753).
+
+## License
+
+Apache-2.0. Contains modified RISC Zero code — see [NOTICE](NOTICE). RISC Zero
+is not affiliated with and does not endorse this repository.

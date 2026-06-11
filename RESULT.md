@@ -7,7 +7,7 @@ measured in this session and is reproducible with the commands at the end.
 ## What this is
 
 risc0 v3.0.5 proves entirely on the CPU on Apple Silicon in every stock
-configuration (established in [r0-metal-doctor](../r0-metal-doctor): the shipped
+configuration (established in [r0-metal-doctor](https://github.com/AnubisQuantumCipher/r0-metal-doctor): the shipped
 prover binary has no Metal HAL, the `metal` cargo feature forwards nowhere, and
 the rv32im circuit has no Metal lane). This project adds the missing lane: a
 **hybrid prover** that runs the generic STARK operations on the GPU via risc0's
@@ -43,10 +43,17 @@ Raw per-run wall time (ms): [bench/metal.csv](bench/metal.csv),
 
 | Lane | median ms | min–max ms | stdev ms | peak RSS (median) |
 |---|---|---|---|---|
-| **metal-hybrid** | **832.7** | 825.5 – 850.6 | 8.1 | 362 MB |
-| cpu | 1489.9 | 1349.0 – 1678.6 | 105.5 | 352 MB |
+| **metal-hybrid** | **832.7** | 825.5 – 850.6 | 8.1 | 365 MB |
+| cpu | 1489.9 | 1349.0 – 1678.6 | 105.5 | 357 MB |
 
-- **Median speedup: 1.79×** (range across runs 1.63× – 1.97×) on this workload.
+(Peak RSS is the process high-water mark — `getrusage(RUSAGE_SELF).ru_maxrss`,
+monotonic across the 8 in-process runs; the figures above are the final-run
+high-water mark per lane, a like-for-like comparison.)
+
+- **Median speedup: 1.79×** on this workload. (Per-run min/max ratio envelope:
+  fastest-CPU/fastest-Metal = 1.63×, slowest/slowest = 1.97×. The 8 runs per
+  lane are independent, so treat 1.79× median as the headline and the envelope
+  as indicative, not paired.)
 - The Metal lane is also far more consistent (stdev 8 ms vs 106 ms): the pure-CPU
   lane runs witgen, accumulate, and the rayon eval_check loop all on the CPU and
   contends for cores; the hybrid offloads NTT/FRI/Merkle to the GPU.
@@ -91,7 +98,11 @@ cd e2e
 cargo build --release
 ./target/release/host bench 8                 # metal-hybrid lane
 ZKF_DISABLE_METAL=1 ./target/release/host bench 8   # cpu lane
-RUST_LOG=debug ../../r0-metal-doctor/target/release/r0-metal-doctor \
+
+# Independent lane observation (separate checkout):
+git clone https://github.com/AnubisQuantumCipher/r0-metal-doctor
+cargo build --release --manifest-path r0-metal-doctor/Cargo.toml
+RUST_LOG=debug r0-metal-doctor/target/release/r0-metal-doctor \
   prove --project . --json                    # verdict: metal-observed
 ```
 

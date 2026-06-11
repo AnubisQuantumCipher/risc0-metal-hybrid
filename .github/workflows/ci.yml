@@ -1,0 +1,48 @@
+name: ci
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  e2e-apple-silicon:
+    # macos-14 runners are arm64 (Apple Silicon) — the Metal lane is exercised
+    # for real: prove on the hybrid lane and assert the patched circuit's Metal
+    # module actually ran (runtime evidence, not a compile-time flag), then
+    # verify the receipt; repeat with the lane forced to CPU.
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install RISC Zero toolchain
+        run: |
+          curl -sL https://risczero.com/install -o rzup-install.sh
+          bash rzup-install.sh
+          echo "$HOME/.risc0/bin" >> "$GITHUB_PATH"
+      - name: rzup install (pinned to the validated versions)
+        run: |
+          rzup install rust 1.94.1
+          rzup install cargo-risczero 3.0.5
+      - name: Smoke test — Metal HAL bit-identical to CPU
+        run: cargo test --release --manifest-path m0-metalhal-smoke/Cargo.toml
+      - name: Build e2e
+        run: cargo build --release --manifest-path e2e/Cargo.toml
+      - name: Metal hybrid lane — assert Metal module ran + receipt verifies
+        run: |
+          out=$(RUST_LOG=debug ./e2e/target/release/host 2>&1)
+          echo "$out" | tail -5
+          echo "$out" | grep -q "risc0_circuit_rv32im::prove::hal::metal" \
+            || { echo "FAIL: patched Metal circuit HAL did not run"; exit 1; }
+          echo "$out" | grep -q "risc0_zkp::hal::metal" \
+            || { echo "FAIL: no generic Metal HAL activity observed"; exit 1; }
+          echo "$out" | grep -q "RECEIPT VERIFIED" \
+            || { echo "FAIL: receipt did not verify"; exit 1; }
+      - name: Forced CPU lane — assert CPU module ran + receipt verifies
+        run: |
+          out=$(RUST_LOG=debug ZKF_DISABLE_METAL=1 ./e2e/target/release/host 2>&1)
+          echo "$out" | tail -5
+          echo "$out" | grep -q "risc0_circuit_rv32im::prove::hal::cpu" \
+            || { echo "FAIL: CPU circuit HAL did not run under ZKF_DISABLE_METAL"; exit 1; }
+          echo "$out" | grep -q "RECEIPT VERIFIED" \
+            || { echo "FAIL: receipt did not verify"; exit 1; }

@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// MODIFIED from risc0-circuit-rv32im 4.0.4 (2026-06-11): adds the hybrid
+// Metal proving lane for Apple Silicon. See repository NOTICE and patches/.
+
 mod hal;
 #[cfg(test)]
 mod tests;

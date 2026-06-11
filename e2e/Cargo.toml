@@ -1,3 +1,6 @@
+# MODIFIED from the RISC Zero Rust starter template (2026-06-11): adds the
+# [patch.crates-io] entry pointing at the vendored Metal-hybrid circuit crate.
+
 [workspace]
 resolver = "2"
 members = ["host", "methods"]

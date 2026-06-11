@@ -2,3 +2,7 @@ target/
 **/target/
 vendor/risc0-circuit-rv32im/target/
 e2e/target/
+
+# private outreach staging — never publish
+UPSTREAM*.md
+_private-staging/

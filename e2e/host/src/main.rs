@@ -1,3 +1,6 @@
+// Modified from the RISC Zero Rust starter template (2026-06-11): in-process
+// proving via get_prover_server, lane reporting, and the A/B benchmark mode.
+
 //! Hybrid Metal prover harness + controlled benchmark.
 //!
 //! In-process proving (`get_prover_server`) routes to the patched

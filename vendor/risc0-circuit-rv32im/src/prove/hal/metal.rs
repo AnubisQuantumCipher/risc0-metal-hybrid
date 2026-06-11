@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// ADDED in this modified copy of risc0-circuit-rv32im 4.0.4 (2026-06-11):
+// new file, adapted from src/prove/hal/cpu.rs. See repository NOTICE.
+
 //! Hybrid Metal circuit HAL.
 //!
 //! The generic STARK operations (NTT, FRI, Merkle, hashing) run natively on the
