@@ -38,7 +38,7 @@ use risc0_circuit_rv32im_sys::{
 use risc0_core::scope;
 use risc0_sys::ffi_wrap;
 use risc0_zkp::{
-    core::{hash::poseidon2::Poseidon2HashSuite, log2_ceil},
+    core::log2_ceil,
     field::{map_pow, Elem, ExtElem as _, RootsOfUnity as _},
     hal::{
         metal::{BufferImpl as MetalBuffer, MetalHalPoseidon2},
@@ -158,14 +158,17 @@ impl CircuitHal<Hal> for MetalCircuitHal {
         let accum = groups[REGISTER_GROUP_ACCUM].as_ptr() as *const Val;
         let mix = globals[GLOBAL_MIX].as_ptr() as *const Val;
         let out = globals[GLOBAL_OUT].as_ptr() as *const Val;
-        let check_ptr = check.as_ptr() as *mut Val;
-        let check_len = check.size();
 
         let data = unsafe { std::slice::from_raw_parts(data, groups[REGISTER_GROUP_DATA].size()) };
         let accum =
             unsafe { std::slice::from_raw_parts(accum, groups[REGISTER_GROUP_ACCUM].size()) };
         let mix = unsafe { std::slice::from_raw_parts(mix, globals[GLOBAL_MIX].size()) };
         let out = unsafe { std::slice::from_raw_parts(out, globals[GLOBAL_OUT].size()) };
+        // Const slice (Sync) captured by the parallel closure; re-cast to mut
+        // inside, exactly as the CPU implementation does. Writes are disjoint.
+        let check = unsafe {
+            std::slice::from_raw_parts(check.as_ptr() as *const Val, check.size())
+        };
         let poly_mix_pows = poly_mix_pows.as_slice();
 
         let args: &[&[Val]] = &[accum, data, out, mix];
@@ -188,7 +191,7 @@ impl CircuitHal<Hal> for MetalCircuitHal {
 
             // SAFETY: each cycle writes disjoint indices (i * domain + cycle).
             let check =
-                unsafe { std::slice::from_raw_parts_mut(check_ptr, check_len) };
+                unsafe { std::slice::from_raw_parts_mut(check.as_ptr() as *mut Val, check.len()) };
             for i in 0..ExtVal::EXT_SIZE {
                 check[i * domain + cycle] = ret.elems()[i];
             }
@@ -212,9 +215,8 @@ impl CircuitHal<Hal> for MetalCircuitHal {
 }
 
 pub fn segment_prover() -> Result<Box<dyn SegmentProver>> {
-    let hal_factory = || {
-        let _suite = Poseidon2HashSuite::new_suite();
-        (Rc::new(MetalHalPoseidon2::new()), Rc::new(MetalCircuitHal))
-    };
+    // MetalHalPoseidon2::new() installs Poseidon2HashSuite internally — the
+    // same suite the CPU prover and the verifier use.
+    let hal_factory = || (Rc::new(MetalHalPoseidon2::new()), Rc::new(MetalCircuitHal));
     Ok(Box::new(SegmentProverImpl::new(hal_factory)))
 }
