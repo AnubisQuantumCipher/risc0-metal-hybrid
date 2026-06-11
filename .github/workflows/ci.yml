@@ -13,6 +13,10 @@ jobs:
     # verify the receipt; repeat with the lane forced to CPU.
     runs-on: macos-14
     timeout-minutes: 45
+    # rzup queries the GitHub API for toolchain releases; without a token it uses
+    # the 60/hr unauthenticated limit and flakes. The built-in token authenticates it.
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - name: Install RISC Zero toolchain
