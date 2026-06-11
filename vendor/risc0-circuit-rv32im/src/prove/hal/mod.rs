@@ -15,7 +15,9 @@
 pub(crate) mod cpu;
 #[cfg(feature = "cuda")]
 pub(crate) mod cuda;
-#[cfg(all(feature = "metal", any(all(target_os = "macos", target_arch = "aarch64"), target_os = "ios")))]
+// On Apple Silicon the Metal hybrid lane is built automatically whenever the
+// crate is built to prove (the `prove` feature), with no extra feature flag.
+#[cfg(all(feature = "prove", not(feature = "cuda"), target_os = "macos", target_arch = "aarch64"))]
 pub(crate) mod metal;
 
 use std::rc::Rc;

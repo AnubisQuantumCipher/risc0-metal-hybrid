@@ -5,9 +5,9 @@ edition = "2021"
 
 [dependencies]
 methods = { path = "../methods" }
+# Just the standard prove feature. On Apple Silicon the patched circuit crate
+# auto-selects the Metal hybrid lane — no metal feature, no manual wiring.
 risc0-zkvm = { version = "=3.0.5", features = ["prove"] }
-# Force the `metal` feature on the (patched) circuit crate so its segment_prover()
-# selects the Metal hybrid lane on Apple Silicon.
-risc0-circuit-rv32im = { version = "=4.0.4", features = ["metal", "prove"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = "1.0"
+libc = "0.2"

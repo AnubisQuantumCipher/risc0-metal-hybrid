@@ -55,5 +55,7 @@ real proving work. The bar for "it works" is a receipt that **verifies**.
   returned **`RECEIPT VERIFIED`** (exit 0). risc0 proving used the Apple Silicon
   GPU and produced a valid proof.
 
-All three milestones complete. See [RESULT.md](RESULT.md) for the full result,
-evidence, and honest scope.
+All three milestones complete, plus a controlled benchmark and automatic
+Apple-Silicon lane selection (no feature flags). See [RESULT.md](RESULT.md) for
+the measured result (median 1.79× vs CPU on the test guest), full scope, and
+setup steps.

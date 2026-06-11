@@ -33,10 +33,6 @@ cuda = [
     "risc0-zkp/cuda",
 ]
 default = []
-metal = [
-    "prove",
-    "risc0-zkp/metal",
-]
 execute = [
     "anyhow/backtrace",
     "dep:byteorder",
@@ -122,6 +118,13 @@ default-features = false
 [dependencies.risc0-zkp]
 version = "3.0.4"
 default-features = false
+
+# On Apple Silicon macOS, always compile risc0-zkp's Metal HAL so the hybrid
+# Metal lane is available with no feature flags or user configuration.
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies.risc0-zkp]
+version = "3.0.4"
+default-features = false
+features = ["metal"]
 
 [dependencies.serde]
 version = "1.0"

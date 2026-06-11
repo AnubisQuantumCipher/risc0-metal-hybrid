@@ -1,78 +1,116 @@
-# Result — RISC Zero proving on the Apple Silicon GPU, verified
+# Hybrid Metal RISC Zero prover — what it delivers today
 
-Date: 2026-06-11 · Host: Apple M4 Max, macOS 26.0 · risc0 v3.0.5 / rv32im circuit 4.0.4
+Date: 2026-06-11 · Host: Apple M4 Max (16-core CPU, 40-core GPU), 48 GB unified
+memory, macOS 26.0 · risc0 v3.0.5 / rv32im circuit 4.0.4. Every number below was
+measured in this session and is reproducible with the commands at the end.
 
-## What was achieved
+## What this is
 
-A RISC Zero zkVM proof was generated with the generic STARK operations running
-on the Apple Silicon GPU via Metal, and the resulting receipt **passed the stock
-verifier**. This is the first configuration in which risc0 proving uses the GPU
-on this machine. The earlier finding ([r0-metal-doctor](../r0-metal-doctor))
-established that stock v3.0.5 proves entirely on CPU in every reachable
-configuration. This project built the missing lane and proved it works.
+risc0 v3.0.5 proves entirely on the CPU on Apple Silicon in every stock
+configuration (established in [r0-metal-doctor](../r0-metal-doctor): the shipped
+prover binary has no Metal HAL, the `metal` cargo feature forwards nowhere, and
+the rv32im circuit has no Metal lane). This project adds the missing lane: a
+**hybrid prover** that runs the generic STARK operations on the GPU via risc0's
+existing-but-orphaned Metal HAL, while the circuit-specific kernels run on the
+CPU. It produces receipts that pass the **stock verifier**.
 
-## The two signals, both captured
+## What is accelerated, and what is not
 
-1. **Lane observation** (`r0-metal-doctor prove`, RUST_LOG=debug):
-   verdict **`metal-observed`**, exit 0. 26 generic-HAL log lines from
-   `risc0_zkp::hal::metal` (NTT expand/evaluate/interpolate, bit-reverse, FRI,
-   poly-eval — all on the GPU) and 2 from the hybrid circuit HAL
-   `risc0_circuit_rv32im::prove::hal::metal` (witgen, accumulate — delegating to
-   the CPU kernels). Raw report: [r0-metal-doctor/evidence/prove-hybrid-metal-debug.json](../r0-metal-doctor/evidence/prove-hybrid-metal-debug.json).
+| Operation | Where it runs in the hybrid | Notes |
+|---|---|---|
+| NTT (expand / evaluate / interpolate) | **Metal GPU** | the dominant STARK cost |
+| bit-reverse, eltwise, zk-shift | **Metal GPU** | |
+| FRI fold, poly-eval / gather | **Metal GPU** | |
+| Poseidon2 hashing, Merkle build | **Metal GPU** | same suite as the verifier |
+| witgen (witness generation) | CPU C++ kernel | circuit-specific; no Metal kernel exists |
+| accumulate | CPU C++ kernel | circuit-specific |
+| eval_check (per-cycle poly_fp) | CPU C++ kernel (rayon) | circuit-specific |
 
-   First two evidence lines, verbatim:
-   ```
-   risc0_circuit_rv32im::prove::hal::metal: witgen(metal-hybrid): 32768
-   risc0_zkp::hal::metal: output: 131072, input: 32768, count: 1
-   ```
+Mechanism: on Apple Silicon, Metal buffers are `StorageModeShared` unified
+memory, so the pointer handed to a CPU C++ kernel addresses the same bytes the
+GPU reads and writes — the circuit kernels operate in place on the GPU buffers
+with no copy. This is a genuine hybrid, **not** a full GPU port: the ~90K lines
+of circuit constraint kernels remain CPU-bound.
 
-2. **Receipt verification** (`host` binary stdout, exit 0):
-   ```
-   RECEIPT VERIFIED -- Metal hybrid prover produced a valid proof.
-   ```
-   Evidence: [r0-metal-doctor/evidence/hybrid-stdout.txt](../r0-metal-doctor/evidence/hybrid-stdout.txt).
-   The host calls `receipt.verify(HELLO_ID)` with the stock verifier and panics
-   on failure; exit 0 means the proof is cryptographically valid.
+## Controlled benchmark
 
-## How it works
+One release binary, same guest (the `hello` template echoing `15·2^27+1`), same
+input, in-process. One unmeasured warm-up run, then 8 measured runs per lane,
+selected from the same binary via `ZKF_DISABLE_METAL`. No mid-run recompiles.
 
-The hybrid prover (`vendor/risc0-circuit-rv32im/src/prove/hal/metal.rs`):
+Raw per-run wall time (ms): [bench/metal.csv](bench/metal.csv),
+[bench/cpu.csv](bench/cpu.csv).
 
-- **Generic ops on the GPU.** `MetalHalPoseidon2` (risc0-zkp's existing, complete
-  Metal HAL) runs every NTT, FRI fold, Merkle/hash, and eltwise operation as a
-  Metal compute kernel. These dominate STARK proving and are the lines tagged
-  `risc0_zkp::hal::metal` above.
-- **Circuit ops on the CPU, zero-copy.** `MetalCircuitHal` implements the three
-  circuit traits (`CircuitWitnessGenerator`, `CircuitAccumulator`, `CircuitHal`)
-  by handing the Metal buffers' pointers directly to the always-compiled CPU C++
-  kernels (`risc0_circuit_rv32im_cpu_witgen` / `_accum` / `_poly_fp`). Because
-  Apple Silicon Metal buffers are `StorageModeShared` unified memory, the pointer
-  the C++ kernel writes addresses the same bytes the GPU reads — no marshaling.
-- **Consistent hashing.** The HAL uses `Poseidon2HashSuite`, identical to the CPU
-  prover and the verifier, which is why the receipt verifies.
+| Lane | median ms | min–max ms | stdev ms | peak RSS (median) |
+|---|---|---|---|---|
+| **metal-hybrid** | **832.7** | 825.5 – 850.6 | 8.1 | 362 MB |
+| cpu | 1489.9 | 1349.0 – 1678.6 | 105.5 | 352 MB |
 
-Selection is wired in `prove/mod.rs`: on `feature = "metal"` + Apple Silicon,
-`segment_prover()` returns the Metal hybrid lane — the branch RISC Zero had
-stubbed out and commented.
+- **Median speedup: 1.79×** (range across runs 1.63× – 1.97×) on this workload.
+- The Metal lane is also far more consistent (stdev 8 ms vs 106 ms): the pure-CPU
+  lane runs witgen, accumulate, and the rayon eval_check loop all on the CPU and
+  contends for cores; the hybrid offloads NTT/FRI/Merkle to the GPU.
+- Memory is effectively equal (Metal +~3%, within unified memory).
 
-## Honest scope
+**Honesty on scope of the number.** This is one small guest (a single
+32,768-cycle segment), one machine, one risc0 version, with the receipt verified
+every run. It is a real measured speedup, not a projection — but it should not be
+generalized to "1.8× faster proving" across all workloads. Larger multi-segment
+proofs shift the CPU/GPU balance and the per-process warm-up amortizes
+differently; those were not measured here. No claim is made beyond this workload.
 
-- This proves the **segment/STARK proving** path on the GPU and verifies the
-  receipt. It is the cryptographic core of a risc0 proof.
-- "Generic ops on GPU, circuit ops on CPU" is a genuine hybrid, not a full GPU
-  port. Porting the rv32im witgen/eval_check kernels themselves to Metal (~90K
-  lines of CUDA equivalent) remains CPU-bound here. The win is that the
-  GPU-suited bulk (NTT/FRI/Merkle) now runs on the GPU.
-- Measured on one machine, one input, one risc0 version. Performance was not the
-  goal of this run (correctness was); the wall time includes a cold guest build.
-- This is a local patch (`[patch.crates-io]` to a vendored circuit crate), not an
-  upstream change. It demonstrates the lane is reachable and correct.
+## Usability — how to use it today
 
-## Reproduce
+The lane is automatic on Apple Silicon. A host project needs only the standard
+prove feature plus a one-line patch pointing at the vendored circuit crate:
 
+```toml
+# workspace Cargo.toml
+[patch.crates-io]
+risc0-circuit-rv32im = { path = "path/to/vendor/risc0-circuit-rv32im" }
+
+# host/Cargo.toml
+risc0-zkvm = { version = "=3.0.5", features = ["prove"] }
 ```
+
+No `metal` feature, no env var, no code change. On `target_os=macos,
+target_arch=aarch64` the circuit crate auto-selects the hybrid lane and
+auto-enables risc0-zkp's Metal HAL. Force the CPU lane for comparison with
+`ZKF_DISABLE_METAL=1`. Prove in-process so the patched lane is used:
+
+```rust
+let prover = risc0_zkvm::get_prover_server(&ProverOpts::default())?;
+let receipt = prover.prove(env, ELF)?.receipt;
+receipt.verify(IMAGE_ID)?;
+```
+
+Reproduce the benchmark:
+
+```bash
 cd e2e
+cargo build --release
+./target/release/host bench 8                 # metal-hybrid lane
+ZKF_DISABLE_METAL=1 ./target/release/host bench 8   # cpu lane
 RUST_LOG=debug ../../r0-metal-doctor/target/release/r0-metal-doctor \
-  prove --project . --json     # verdict: metal-observed
-./target/release/host          # prints RECEIPT VERIFIED, exits 0
+  prove --project . --json                    # verdict: metal-observed
 ```
+
+## Limitations and current scope
+
+- Single-segment small guest is the only workload measured. Multi-segment,
+  larger-cycle, and recursion/lift/join paths are unmeasured.
+- Circuit kernels (witgen/eval_check/accum) are CPU-bound; for circuit-heavy
+  workloads the speedup will be smaller.
+- Local `[patch]` against a vendored crate, pinned to risc0 4.0.4 / zkvm 3.0.5.
+  Not an upstream change; a version bump means re-vendoring.
+- Apple Silicon only (the whole point). Falls back to CPU elsewhere.
+
+## Honest recommendation: ready for real use?
+
+**Experimental, but usable for a specific purpose today.** It is correct (every
+run's receipt verifies against the stock verifier) and faster on the measured
+workload. It is not production-hardened: one risc0 version, one workload class
+benchmarked, a vendored patch rather than an upstream path. Use it today if you
+prove rv32im segments on Apple Silicon and want the GPU doing the NTT/FRI work,
+and you can pin the risc0 version. Do not yet depend on it for a moving risc0
+version or for circuit-heavy workloads without measuring your own case first.

@@ -46,8 +46,14 @@ pub fn segment_prover() -> Result<Box<dyn SegmentProver>> {
     cfg_if! {
         if #[cfg(feature = "cuda")] {
             self::hal::cuda::segment_prover()
-        } else if #[cfg(all(feature = "metal", any(all(target_os = "macos", target_arch = "aarch64"), target_os = "ios")))] {
-            self::hal::metal::segment_prover()
+        } else if #[cfg(all(feature = "prove", target_os = "macos", target_arch = "aarch64"))] {
+            // Apple Silicon: generic STARK ops on the Metal GPU, circuit kernels
+            // on CPU. Opt out with ZKF_DISABLE_METAL=1 to force the CPU lane.
+            if std::env::var("ZKF_DISABLE_METAL").is_ok_and(|v| v != "0" && !v.is_empty()) {
+                self::hal::cpu::segment_prover()
+            } else {
+                self::hal::metal::segment_prover()
+            }
         } else {
             self::hal::cpu::segment_prover()
         }
