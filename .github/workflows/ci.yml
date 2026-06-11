@@ -8,15 +8,46 @@ on:
 # GitHub-hosted macOS runners are virtualized and do NOT expose a Metal GPU that
 # satisfies risc0-zkp's requirement (MTLArgumentBuffersTier::Tier2). So the Metal
 # lane cannot run there. This CI validates what hosted runners CAN: the patch
-# compiles (including the Metal shaders, via the Metal compiler) and the CPU
-# fallback lane proves + verifies. The Metal lane is validated on real Apple
-# Silicon hardware — see RESULT.md and the committed evidence — and, optionally,
-# by the self-hosted job below.
+# compiles (including the Metal shaders, via the Metal compiler), the CPU lane
+# proves + verifies, AND the runtime GPU probe correctly falls back to the CPU
+# lane on the GPU-less runner instead of panicking. The Metal lane itself is
+# validated on real Apple Silicon hardware — see RESULT.md and the committed
+# evidence — and, optionally, by the self-hosted job below.
 
 jobs:
+  patch-consistency:
+    # The vendored crate must be exactly pristine 4.0.4 + patches/. This guards
+    # against the patch and the vendored tree drifting apart.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download pristine risc0-circuit-rv32im 4.0.4
+        run: |
+          curl -sL -A "r0mh-ci" \
+            -o crate.tgz \
+            "https://static.crates.io/crates/risc0-circuit-rv32im/risc0-circuit-rv32im-4.0.4.crate"
+          tar xzf crate.tgz
+      - name: Apply the committed patch and full-tree diff against vendor/
+        run: |
+          # The diff is rooted at a/risc0-circuit-rv32im-4.0.4/...; -p1 strips
+          # the a/ prefix and targets the extracted crate dir at the repo root.
+          patch -p1 < patches/risc0-circuit-rv32im-4.0.4-metal-hybrid.diff
+          # Full recursive diff (not a per-file allowlist), excluding only
+          # cargo-generated metadata that the registry tarball carries but the
+          # vendored tree may not. Any source-level drift fails the job.
+          diff -ruN \
+            --exclude=.cargo-checksum.json --exclude=.cargo_vcs_info.json \
+            --exclude=.cargo-ok --exclude=Cargo.toml.orig --exclude=Cargo.lock \
+            --exclude=target \
+            risc0-circuit-rv32im-4.0.4 vendor/risc0-circuit-rv32im \
+            || { echo "FAIL: vendor/ is not exactly pristine 4.0.4 + patches/"; exit 1; }
+          echo "OK: vendor/ == pristine 4.0.4 + patches/ (full-tree)"
+
   build-and-cpu-lane:
-    # Hosted Apple Silicon runner: builds the patched stack and proves the CPU
-    # lane (no GPU needed). Confirms the patch is sound and the fallback works.
+    # Hosted Apple Silicon runner: builds the patched stack, proves the CPU
+    # lane, and confirms the runtime probe falls back to CPU on the GPU-less
+    # virtualized runner (default invocation, no ZKF_DISABLE_METAL).
     runs-on: macos-14
     timeout-minutes: 45
     env:
@@ -32,6 +63,10 @@ jobs:
         run: |
           rzup install rust 1.94.1
           rzup install cargo-risczero 3.0.5
+      - name: Smoke crate compiles (Metal HAL shaders included)
+        # The smoke tests themselves need a Tier-2 GPU to run, but compiling the
+        # crate catches Metal-HAL API rot on every push.
+        run: cargo build --release --manifest-path m0-metalhal-smoke/Cargo.toml --tests
       - name: Build the patched stack (compiles Metal shaders too)
         run: cargo build --release --manifest-path e2e/Cargo.toml
       - name: CPU lane — assert CPU circuit HAL ran + receipt verifies
@@ -40,6 +75,16 @@ jobs:
           echo "$out" | tail -5
           echo "$out" | grep -q "risc0_circuit_rv32im::prove::hal::cpu" \
             || { echo "FAIL: CPU circuit HAL did not run"; exit 1; }
+          echo "$out" | grep -q "RECEIPT VERIFIED" \
+            || { echo "FAIL: receipt did not verify"; exit 1; }
+      - name: Default lane — runtime probe must fall back to CPU on GPU-less runner
+        run: |
+          # No ZKF_DISABLE_METAL: the runtime Tier-2 probe should detect the
+          # virtualized GPU is unsuitable and fall back rather than panic.
+          out=$(RUST_LOG=debug ./e2e/target/release/host 2>&1)
+          echo "$out" | tail -5
+          echo "$out" | grep -q "lane=cpu" \
+            || { echo "FAIL: default lane did not fall back to CPU on GPU-less runner"; exit 1; }
           echo "$out" | grep -q "RECEIPT VERIFIED" \
             || { echo "FAIL: receipt did not verify"; exit 1; }
 
@@ -55,7 +100,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - name: Smoke test — Metal HAL bit-identical to CPU
+      - name: Smoke test — Metal HAL bit-identical to CPU (9 generic ops)
         run: cargo test --release --manifest-path m0-metalhal-smoke/Cargo.toml
       - name: Build e2e
         run: cargo build --release --manifest-path e2e/Cargo.toml
@@ -68,3 +113,9 @@ jobs:
             || { echo "FAIL: no generic Metal HAL activity"; exit 1; }
           echo "$out" | grep -q "RECEIPT VERIFIED" \
             || { echo "FAIL: receipt did not verify"; exit 1; }
+      - name: Multi-segment workload also verifies on the Metal lane
+        run: |
+          out=$(./e2e/target/release/host busy 2>&1)
+          echo "$out"
+          echo "$out" | grep -q "RECEIPT VERIFIED" \
+            || { echo "FAIL: busy workload receipt did not verify"; exit 1; }
