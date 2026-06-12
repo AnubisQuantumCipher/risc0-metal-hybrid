@@ -147,7 +147,7 @@ RUST_LOG=debug r0-metal-doctor/target/release/r0-metal-doctor \
 - Two workload classes measured (single-segment `hello`, multi-segment `busy`);
   recursion / lift / join paths are unmeasured.
 - Circuit kernels (witgen/eval_check/accum) are CPU-bound; on this hardware the
-  busy workload still shows 1.74×, but a sufficiently circuit-dominated guest
+  busy workload still shows 1.70×, but a sufficiently circuit-dominated guest
   could show less — measure your own case.
 - Local `[patch]` against a vendored crate, pinned to **risc0-zkvm 3.0.5 /
   risc0-zkp 3.0.4 (exact) / rv32im circuit 4.0.4**. Not an upstream change; a

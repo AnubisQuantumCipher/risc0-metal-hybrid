@@ -5,10 +5,10 @@ proves entirely on the CPU on every Mac — the shipped `r0vm` binary contains n
 Metal HAL, the `metal` cargo feature forwards nowhere, and the rv32im circuit
 has no Metal lane ([evidence](https://github.com/AnubisQuantumCipher/r0-metal-doctor)).
 This repo fixes that with a **hybrid lane**: the generic STARK operations (NTT,
-FRI, Merkle, hashing — the bulk of proving) run on the GPU via risc0's own
-existing-but-orphaned Metal HAL, while the circuit-specific kernels keep running
-on the CPU, over shared unified-memory buffers. Receipts verify with the
-**stock verifier**.
+FRI, Merkle, hashing — the dominant generic-proving costs) run on the GPU via
+risc0's own existing-but-orphaned Metal HAL, while the circuit-specific kernels
+keep running on the CPU, over shared unified-memory buffers. Receipts verify
+with the **stock verifier**.
 
 **Measured on an M4 Max** (same binary per lane, 8 controlled runs each, receipt
 verified every run): **1.70×** on a single-segment guest (842.0 ms vs 1433.3 ms
@@ -19,7 +19,7 @@ two measured workloads.
 
 ## Use it (two steps)
 
-The whole change is a [4-file, ~300-line patch](patches/risc0-circuit-rv32im-4.0.4-metal-hybrid.diff)
+The whole change is a [4-file, ~420-line patch](patches/risc0-circuit-rv32im-4.0.4-metal-hybrid.diff)
 to `risc0-circuit-rv32im` 4.0.4, vendored in this repo.
 
 **1.** Point your workspace at the patched circuit crate:
