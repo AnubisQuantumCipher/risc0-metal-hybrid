@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# CI needs nothing beyond reading the repo contents.
+permissions:
+  contents: read
+
 # GitHub-hosted macOS runners are virtualized and do NOT expose a Metal GPU that
 # satisfies risc0-zkp's requirement (MTLArgumentBuffersTier::Tier2). So the Metal
 # lane cannot run there. This CI validates what hosted runners CAN: the patch
@@ -21,7 +25,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - name: Download pristine risc0-circuit-rv32im 4.0.4
         run: |
           curl -sL -A "r0mh-ci" \
@@ -53,7 +59,9 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - name: Install RISC Zero toolchain
         run: |
           curl -sL https://risczero.com/install -o rzup-install.sh
@@ -99,7 +107,9 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - name: Smoke test — Metal HAL bit-identical to CPU (9 generic ops)
         run: cargo test --release --manifest-path m0-metalhal-smoke/Cargo.toml
       - name: Build e2e

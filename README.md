@@ -11,9 +11,9 @@ on the CPU, over shared unified-memory buffers. Receipts verify with the
 **stock verifier**.
 
 **Measured on an M4 Max** (same binary per lane, 8 controlled runs each, receipt
-verified every run): **1.69×** on a single-segment guest (822.9 ms vs 1391.2 ms
-pure-CPU) and **1.74×** on a circuit-heavier multi-segment guest (152.0 s vs
-264.9 s) — the speedup holds, not erodes, on the harder workload. Full data and
+verified every run): **1.70×** on a single-segment guest (842.0 ms vs 1433.3 ms
+pure-CPU) and **1.70×** on a circuit-heavier multi-segment guest (155.2 s vs
+264.4 s) — the speedup holds, not erodes, on the harder workload. Full data and
 honest scope in [RESULT.md](RESULT.md). Do not generalize the numbers beyond the
 two measured workloads.
 

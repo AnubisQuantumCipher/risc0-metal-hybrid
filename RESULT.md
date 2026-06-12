@@ -69,19 +69,22 @@ Raw per-run wall time: [bench/hello-metal.csv](bench/hello-metal.csv),
 
 | Workload · lane | median | min–max | stdev (sample) | speedup |
 |---|---|---|---|---|
-| **hello · metal-hybrid** | **822.9 ms** | 807.4 – 899.4 ms | 29.1 ms | — |
-| hello · cpu | 1391.2 ms | 1331.9 – 1425.2 ms | 33.3 ms | **1.69×** |
-| **busy · metal-hybrid** | **152.03 s** | 151.63 – 152.60 s | 0.36 s | — |
-| busy · cpu | 264.86 s | 263.07 – 267.60 s | 1.47 s | **1.74×** |
+| **hello · metal-hybrid** | **842.0 ms** | 815.0 – 862.4 ms | 16.3 ms | — |
+| hello · cpu | 1433.3 ms | 1401.0 – 1515.3 ms | 36.8 ms | **1.70×** |
+| **busy · metal-hybrid** | **155.18 s** | 154.72 – 156.39 s | 0.54 s | — |
+| busy · cpu | 264.44 s | 263.37 – 272.35 s | 4.01 s | **1.70×** |
 
-- **Median speedup: 1.69× on `hello`, 1.74× on `busy`.** The circuit-heavier,
+- **Median speedup: 1.70× on both workloads.** The circuit-heavier,
   multi-segment `busy` workload does *not* erode the speedup on this hardware —
   the GPU still carries the NTT/FRI/Merkle work in every segment — and it runs
-  with very low variance (coefficient of variation 0.2 % metal / 0.6 % cpu)
+  with very low variance (coefficient of variation 0.3 % metal / 1.5 % cpu)
   because per-process warm-up is amortized across a long proof.
-- Both lanes are stable on the small workload too (cv 3.5 % metal / 2.4 % cpu).
+- Both lanes are stable on the small workload too (cv 1.9 % metal / 2.5 % cpu).
+- The prover server is constructed once per process and reused across the
+  measured runs, so each row times a steady-state `prove()` call; the one-time
+  setup is paid by the unmeasured warm-up run.
 - Peak RSS, final-run high-water mark (`getrusage(RUSAGE_SELF).ru_maxrss`,
-  monotonic across the in-process runs): hello 371 MB metal / 348 MB cpu; busy
+  monotonic across the in-process runs): hello 372 MB metal / 358 MB cpu; busy
   8.5 GB metal / 10.6 GB cpu. Memory is comparable; on the large workload the
   hybrid uses *less* peak RSS than the pure-CPU lane.
 
