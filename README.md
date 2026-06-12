@@ -19,7 +19,7 @@ two measured workloads.
 
 ## Use it (two steps)
 
-The whole change is a [4-file, ~530-line patch](patches/risc0-circuit-rv32im-4.0.4-metal-hybrid.diff)
+The whole change is a [5-file, ~630-line patch](patches/risc0-circuit-rv32im-4.0.4-metal-hybrid.diff)
 to `risc0-circuit-rv32im` 4.0.4, vendored in this repo.
 
 **1.** Point your workspace at the patched circuit crate:

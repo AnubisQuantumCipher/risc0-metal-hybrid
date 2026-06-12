@@ -91,49 +91,52 @@ Raw per-run wall time: [bench/hello-metal.csv](bench/hello-metal.csv),
 ## Where the time goes (phase attribution)
 
 `host profile <guest>` times the three circuit-specific CPU kernels directly
-around their FFI calls (armed by `R0_PROFILE`); the generic-op time — NTT / FRI
-/ Merkle / hashing, the GPU's work in the metal lane — is the remainder of the
-measured prove wall-time. One representative metal-lane run per workload:
+around their FFI calls (armed by `R0_PROFILE`, in both the CPU and Metal HALs);
+the generic-op time — NTT / FRI / Merkle / hashing — is the remainder of the
+measured prove wall-time. Run on **both lanes** for both workloads (one
+representative run each):
 
-| Phase (metal lane) | hello | busy (6 seg) |
-|---|---|---|
-| circuit: witgen (CPU) | 4.8 ms (0.6 %) | 1.02 s (0.7 %) |
-| circuit: accumulate (CPU) | 29.0 ms (3.7 %) | 4.55 s (3.0 %) |
-| circuit: **eval_check** (CPU) | **561.5 ms (71.1 %)** | **125.31 s (83.4 %)** |
-| **circuit floor (CPU subtotal)** | **595.3 ms (75.3 %)** | **130.87 s (87.1 %)** |
-| generic ops (GPU on metal) | 195.0 ms (24.7 %) | 19.34 s (12.9 %) |
-| prove (wall) | 790.3 ms | 150.21 s |
+| Phase | hello · metal | hello · cpu | busy · metal | busy · cpu |
+|---|---|---|---|---|
+| circuit: witgen | 4.9 ms | 5.0 ms | 1.00 s | 1.02 s |
+| circuit: accumulate | 30.0 ms | 29.9 ms | 4.58 s | 4.57 s |
+| circuit: **eval_check** | **566.2 ms** | **569.2 ms** | **124.89 s** | **125.26 s** |
+| **circuit floor (CPU)** | **601.2 ms** | **604.0 ms** | **130.46 s** | **130.85 s** |
+| generic ops | 195.1 ms (GPU) | 685.7 ms (CPU) | 19.33 s (GPU) | 133.41 s (CPU) |
+| prove (wall) | 796.3 ms | 1289.7 ms | 149.79 s | 264.26 s |
 
-The circuit kernels run on the CPU in **both** lanes — the hybrid moves only the
-generic remainder to the GPU — so the floor is, by construction, lane-invariant
-(the identical `risc0_circuit_rv32im_cpu_*` FFI on identical witness data; the
-timers are in the Metal HAL, which is why `profile` runs on the metal lane).
-Pairing the measured floor with the 8-run lane medians:
+Two things fall straight out of the measurement:
 
-| | floor (CPU, both lanes) | generic on GPU | generic on CPU | GPU generic speedup | structural ceiling (cpu median ÷ floor) |
-|---|---|---|---|---|---|
-| hello | ~0.60 s | ~0.25 s | ~0.84 s | ~3.4× | ~2.4× |
-| busy | ~131 s | ~24 s | ~134 s | ~5.5× | ~2.0× |
+- **The circuit floor is lane-invariant — measured, not assumed.** The three
+  circuit kernels are the identical `risc0_circuit_rv32im_cpu_*` FFI on
+  identical witness data in both lanes, and the timers confirm it: 601.2 ms vs
+  604.0 ms on `hello` (0.5 % apart), 130.46 s vs 130.85 s on `busy` (0.3 %). The
+  floor is what the GPU cannot touch.
+- **The GPU's win is entirely on the generic remainder, and it is real:** the
+  generic ops run 685.7 → 195.1 ms on `hello` (**3.5×**) and 133.41 → 19.33 s on
+  `busy` (**6.9×**). Everything else is unchanged.
 
 **This explains the otherwise coincidental "1.70× on both".** The two workloads
-reach the same overall ratio by *different* routes: `hello` has a larger generic
-fraction (25 %) but a smaller GPU win on its small transforms (~3.4×), while
-`busy` has a tiny generic fraction (13 %) but a larger GPU win on its bigger
-transforms (~5.5×). They net out near 1.70× by accident, not by law — do not
-read the equality as a stable property.
+reach a similar overall ratio by *different* routes: `hello` has a larger
+generic fraction (~25 % of the metal-lane proof) but a smaller GPU win on its
+small transforms (3.5×), while `busy` has a tiny generic fraction (~13 %) but a
+larger GPU win on its bigger transforms (6.9×). They net out near the headline
+by accident, not by law — do not read the equality as a stable property. (These
+single profiled runs give 1.62× and 1.76×; the 8-run medians give 1.70× / 1.70×;
+all are the same story at run-to-run variance.)
 
-It also bounds the headroom honestly. The `eval_check`-dominated circuit floor
-is exactly what RISC Zero's full Metal port could not move — `eval_check`
+It also bounds the headroom honestly. The `eval_check`-dominated floor is
+exactly what RISC Zero's full Metal port could not move — `eval_check`
 overflowed Metal's register file and was deprecated in 2023, and even when it
 ran it was ~15× slower than CPU ([risc0#937](https://github.com/risc0/risc0/issues/937)
 / [#999](https://github.com/risc0/risc0/issues/999) /
 [#1310](https://github.com/risc0/risc0/issues/1310); see the README). Because
 that floor is immovable on Metal and grows as a share of the proof on larger
-workloads (75 % → 87 % here), the structural ceiling for this hybrid is roughly
-**2.0–2.4× over pure CPU, falling toward 1× as the guest gets more
-circuit-heavy** — and the measured 1.70× is already most of the way there. A
-bigger multiplier needs a Metal `eval_check`, which is the open hard problem,
-not a tuning exercise.
+workloads (eval_check 71 % of `hello`, 83 % of `busy`), the structural ceiling
+for this hybrid (cpu prove ÷ floor) is **~2.1× on `hello`, ~2.0× on `busy`, and
+falls toward 1× as the guest gets more circuit-heavy** — and the measured 1.70×
+is already most of the way there. A bigger multiplier needs a Metal
+`eval_check`, which is the open hard problem, not a tuning exercise.
 
 **Honesty on scope of the number.** Two workloads on one machine and one risc0
 version, receipt-verified every run. These are real measured speedups, not

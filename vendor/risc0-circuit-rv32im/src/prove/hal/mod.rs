@@ -38,6 +38,41 @@ use super::{
     witgen::{preflight::PreflightTrace, PreflightResults, WitnessGenerator},
     Seal, SegmentProver,
 };
+
+// ---------------------------------------------------------------------------
+// Optional per-phase profiling of the circuit-specific CPU kernels.
+//
+// These three kernels (witgen, accumulate, eval_check) run on the CPU in BOTH
+// lanes — the hybrid moves only the generic STARK ops to the GPU — so their
+// summed wall-time is the proof's Amdahl floor. Both `cpu` and `metal` HALs
+// time their FFI calls through `timed()` when `R0_PROFILE` is set, so the floor
+// can be measured directly on either lane. Read via
+// `crate::prove::phase_profile_ns`. Normal proving pays nothing (one env probe
+// per phase per segment, only the Instant arithmetic when armed).
+// ---------------------------------------------------------------------------
+use std::sync::atomic::{AtomicU64, Ordering};
+
+pub(crate) static PROFILE_WITGEN_NS: AtomicU64 = AtomicU64::new(0);
+pub(crate) static PROFILE_ACCUM_NS: AtomicU64 = AtomicU64::new(0);
+pub(crate) static PROFILE_EVALCHECK_NS: AtomicU64 = AtomicU64::new(0);
+
+#[inline]
+pub(crate) fn profiling() -> bool {
+    std::env::var_os("R0_PROFILE").is_some()
+}
+
+/// Run `f`; when profiling is armed, add its wall-time (ns) to `counter`.
+#[inline]
+pub(crate) fn timed<R>(counter: &AtomicU64, f: impl FnOnce() -> R) -> R {
+    if profiling() {
+        let t = std::time::Instant::now();
+        let r = f();
+        counter.fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        r
+    } else {
+        f()
+    }
+}
 use crate::{
     execute::segment::Segment,
     zirgen::{

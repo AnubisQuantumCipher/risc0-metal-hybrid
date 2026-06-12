@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// MODIFIED from risc0-circuit-rv32im 4.0.4 (2026-06-12): the three circuit
+// kernel hand-offs are wrapped in `super::timed(...)` so the optional
+// `R0_PROFILE` per-phase attribution measures the CPU lane directly (the same
+// floor the Metal HAL records). No behavior change when R0_PROFILE is unset.
+// See repository NOTICE and patches/.
+
 use std::rc::Rc;
 
 use anyhow::Result;
@@ -81,8 +87,10 @@ impl CircuitWitnessGenerator<CpuHal> for CpuCircuitHal {
             bigint_bytes_len: preflight.bigint_bytes.len() as u32,
             table_split_cycle: preflight.table_split_cycle,
         };
-        ffi_wrap(|| unsafe {
-            risc0_circuit_rv32im_cpu_witgen(mode as u32, &buffers, &preflight, cycles as u32)
+        super::timed(&super::PROFILE_WITGEN_NS, || {
+            ffi_wrap(|| unsafe {
+                risc0_circuit_rv32im_cpu_witgen(mode as u32, &buffers, &preflight, cycles as u32)
+            })
         })
     }
 }
@@ -137,7 +145,11 @@ impl CircuitAccumulator<CpuHal> for CpuCircuitHal {
             bigint_bytes_len: preflight.bigint_bytes.len() as u32,
             table_split_cycle: preflight.table_split_cycle,
         };
-        ffi_wrap(|| unsafe { risc0_circuit_rv32im_cpu_accum(&buffers, &preflight, cycles as u32) })
+        super::timed(&super::PROFILE_ACCUM_NS, || {
+            ffi_wrap(|| unsafe {
+                risc0_circuit_rv32im_cpu_accum(&buffers, &preflight, cycles as u32)
+            })
+        })
     }
 }
 
@@ -177,30 +189,33 @@ impl CircuitHal<CpuHal> for CpuCircuitHal {
 
         let args: &[&[Val]] = &[accum, data, out, mix];
 
-        (0..domain).into_par_iter().for_each(|cycle| {
-            let args: Vec<*const Val> = args.iter().map(|x| (*x).as_ptr()).collect();
-            let mut tot = ExtVal::ZERO;
-            unsafe {
-                risc0_circuit_rv32im_cpu_poly_fp(
-                    cycle,
-                    domain,
-                    poly_mix_pows.as_ptr(),
-                    args.as_ptr(),
-                    &mut tot,
-                )
-            };
-            let x = Val::ROU_FWD[po2 + EXP_PO2].pow(cycle);
-            // TODO: what is this magic number 3?
-            let y = (Val::new(3) * x).pow(1 << po2);
-            let ret = tot * (y - Val::new(1)).inv();
+        super::timed(&super::PROFILE_EVALCHECK_NS, || {
+            (0..domain).into_par_iter().for_each(|cycle| {
+                let args: Vec<*const Val> = args.iter().map(|x| (*x).as_ptr()).collect();
+                let mut tot = ExtVal::ZERO;
+                unsafe {
+                    risc0_circuit_rv32im_cpu_poly_fp(
+                        cycle,
+                        domain,
+                        poly_mix_pows.as_ptr(),
+                        args.as_ptr(),
+                        &mut tot,
+                    )
+                };
+                let x = Val::ROU_FWD[po2 + EXP_PO2].pow(cycle);
+                // TODO: what is this magic number 3?
+                let y = (Val::new(3) * x).pow(1 << po2);
+                let ret = tot * (y - Val::new(1)).inv();
 
-            // SAFETY: This conversion is to make the check slice mutable, which should be
-            // safe because each thread access will not overlap with each other.
-            let check =
-                unsafe { std::slice::from_raw_parts_mut(check.as_ptr() as *mut Val, check.len()) };
-            for i in 0..ExtVal::EXT_SIZE {
-                check[i * domain + cycle] = ret.elems()[i];
-            }
+                // SAFETY: This conversion is to make the check slice mutable, which should be
+                // safe because each thread access will not overlap with each other.
+                let check = unsafe {
+                    std::slice::from_raw_parts_mut(check.as_ptr() as *mut Val, check.len())
+                };
+                for i in 0..ExtVal::EXT_SIZE {
+                    check[i * domain + cycle] = ret.elems()[i];
+                }
+            });
         });
     }
 

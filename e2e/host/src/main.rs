@@ -151,19 +151,11 @@ fn workload_from(arg: Option<&str>) -> Workload {
 /// of the measured prove wall-time. This explains the speedup: only the
 /// remainder is accelerated, so the circuit-kernel floor bounds it.
 ///
-/// The HAL timers exist only on the metal lane. The circuit-kernel work is the
-/// identical CPU C++ FFI on identical data in both lanes, so the floor measured
-/// here is, by construction, ~lane-invariant; the CPU lane's own decomposition
-/// uses the same floor.
+/// Both HALs feed the timers, so this measures whichever lane is active. The
+/// circuit-kernel work is the identical CPU C++ FFI on identical data in both
+/// lanes, so the floor is ~lane-invariant; running both lanes confirms it
+/// directly rather than by assertion.
 fn run_profile(prover: &Rc<dyn ProverServer>, w: &Workload) {
-    if !risc0_circuit_rv32im::prove::metal_lane_selected() {
-        eprintln!(
-            "profile: per-phase timers are armed only on the metal lane; \
-             run without R0_DISABLE_METAL to measure the circuit-kernel floor."
-        );
-        return;
-    }
-
     // Warm-up (not profiled): pays one-time pipeline/library setup.
     prove_once(prover, w);
 
@@ -184,10 +176,16 @@ fn run_profile(prover: &Rc<dyn ProverServer>, w: &Workload) {
     let circuit_ms: f64 = rows.iter().map(|(_, m)| m).sum();
 
     if circuit_ms <= 0.0 {
-        eprintln!("profile: no circuit-phase time recorded (unexpected on the metal lane).");
+        eprintln!("profile: no circuit-phase time recorded (is R0_PROFILE plumbed?).");
         return;
     }
     let generic_ms = (total_ms - circuit_ms).max(0.0);
+    let metal = risc0_circuit_rv32im::prove::metal_lane_selected();
+    let generic_label = if metal {
+        "generic ops (GPU)"
+    } else {
+        "generic ops (CPU)"
+    };
 
     println!("=== phase profile: lane={} guest={} ===", lane(), w.name);
     println!("segments: {segments}  (times summed across all segments)");
@@ -196,20 +194,34 @@ fn run_profile(prover: &Rc<dyn ProverServer>, w: &Workload) {
         println!("{:<30} {:>12.1} {:>8.1}%", label, m, 100.0 * m / total_ms);
     }
     println!("{:<30} {:>12.1} {:>8.1}%", "circuit floor (CPU subtotal)", circuit_ms, 100.0 * circuit_ms / total_ms);
-    println!("{:<30} {:>12.1} {:>8.1}%", "generic ops (GPU on metal)", generic_ms, 100.0 * generic_ms / total_ms);
+    println!("{:<30} {:>12.1} {:>8.1}%", generic_label, generic_ms, 100.0 * generic_ms / total_ms);
     println!("{:<30} {:>12.1} {:>8.1}%", "prove (wall)", total_ms, 100.0);
-    println!(
-        "\nThe circuit floor ({:.1} ms, {:.0}% of this proof) runs on the CPU in\n\
-         both lanes — only the {:.0}% generic remainder is on the GPU. Speeding the\n\
-         GPU side to zero would still leave the floor, capping any further speedup\n\
-         of THIS lane at {:.2}x. The hybrid's value over pure CPU comes from\n\
-         accelerating that remainder; the eval_check-dominated floor is what a\n\
-         full GPU port could not move (see README, risc0#937/#999/#1310).",
-        circuit_ms,
-        100.0 * circuit_ms / total_ms,
-        100.0 * generic_ms / total_ms,
-        total_ms / circuit_ms
-    );
+    if metal {
+        println!(
+            "\nThe circuit floor ({:.1} ms, {:.0}% of this proof) is CPU in BOTH lanes;\n\
+             only the {:.0}% generic remainder is on the GPU here. Even a free generic\n\
+             lane would leave the floor, capping any further speedup of THIS lane at\n\
+             {:.2}x. The hybrid's value over pure CPU is accelerating that remainder;\n\
+             the eval_check-dominated floor is what a full GPU port could not move\n\
+             (README, risc0#937/#999/#1310). Run R0_DISABLE_METAL=1 ... profile to\n\
+             confirm the same floor on the CPU lane.",
+            circuit_ms,
+            100.0 * circuit_ms / total_ms,
+            100.0 * generic_ms / total_ms,
+            total_ms / circuit_ms
+        );
+    } else {
+        println!(
+            "\nCPU lane: the circuit floor is {:.1} ms ({:.0}% of prove); the generic\n\
+             ops run on the CPU too ({:.0}%). Compare the floor against the metal-lane\n\
+             profile — it is the same kernels on the same data, so it is ~equal, and\n\
+             the metal lane's speedup comes entirely from moving the generic remainder\n\
+             to the GPU.",
+            circuit_ms,
+            100.0 * circuit_ms / total_ms,
+            100.0 * generic_ms / total_ms
+        );
+    }
 }
 
 fn main() {

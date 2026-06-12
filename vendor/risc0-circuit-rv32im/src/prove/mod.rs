@@ -119,18 +119,10 @@ pub fn metal_lane_selected() -> bool {
 
 /// Reset the per-phase profile counters (see [`phase_profile_ns`]).
 pub fn phase_profile_reset() {
-    #[cfg(all(
-        feature = "prove",
-        not(feature = "cuda"),
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
-    {
-        use std::sync::atomic::Ordering;
-        self::hal::metal::PROFILE_WITGEN_NS.store(0, Ordering::Relaxed);
-        self::hal::metal::PROFILE_ACCUM_NS.store(0, Ordering::Relaxed);
-        self::hal::metal::PROFILE_EVALCHECK_NS.store(0, Ordering::Relaxed);
-    }
+    use std::sync::atomic::Ordering;
+    self::hal::PROFILE_WITGEN_NS.store(0, Ordering::Relaxed);
+    self::hal::PROFILE_ACCUM_NS.store(0, Ordering::Relaxed);
+    self::hal::PROFILE_EVALCHECK_NS.store(0, Ordering::Relaxed);
 }
 
 /// Wall-time in nanoseconds spent in the three circuit-specific CPU kernels --
@@ -138,26 +130,16 @@ pub fn phase_profile_reset() {
 /// environment variable set, accumulated since the last [`phase_profile_reset`].
 ///
 /// These kernels run on the CPU in both lanes (the hybrid moves only the
-/// generic STARK ops to the GPU), so their sum is the proof's Amdahl floor. The
-/// timers live in the hybrid Metal HAL, so this returns `[0, 0, 0]` off the
-/// metal lane (CPU lane, non-Apple-Silicon, or CUDA build).
+/// generic STARK ops to the GPU), so their sum is the proof's Amdahl floor.
+/// Both the CPU HAL and the Metal HAL feed these counters, so the floor can be
+/// measured directly on either lane.
 pub fn phase_profile_ns() -> [u64; 3] {
-    #[cfg(all(
-        feature = "prove",
-        not(feature = "cuda"),
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
-    {
-        use std::sync::atomic::Ordering;
-        return [
-            self::hal::metal::PROFILE_WITGEN_NS.load(Ordering::Relaxed),
-            self::hal::metal::PROFILE_ACCUM_NS.load(Ordering::Relaxed),
-            self::hal::metal::PROFILE_EVALCHECK_NS.load(Ordering::Relaxed),
-        ];
-    }
-    #[allow(unreachable_code)]
-    [0, 0, 0]
+    use std::sync::atomic::Ordering;
+    [
+        self::hal::PROFILE_WITGEN_NS.load(Ordering::Relaxed),
+        self::hal::PROFILE_ACCUM_NS.load(Ordering::Relaxed),
+        self::hal::PROFILE_EVALCHECK_NS.load(Ordering::Relaxed),
+    ]
 }
 
 pub fn segment_prover() -> Result<Box<dyn SegmentProver>> {

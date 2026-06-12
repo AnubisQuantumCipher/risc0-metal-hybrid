@@ -58,8 +58,6 @@
 //!    still ends in `commit(); wait_until_completed();`.
 
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
 
 use anyhow::Result;
 use rayon::prelude::*;
@@ -93,31 +91,9 @@ use crate::{
 
 type Hal = MetalHalPoseidon2;
 
-// Optional per-phase profiling of the circuit-specific CPU kernels. These run
-// on the CPU in both lanes, so their summed time is the proof's Amdahl floor.
-// Armed only when `R0_PROFILE` is set in the environment, so normal proving
-// pays nothing. Read via `crate::prove::phase_profile_ns`.
-pub static PROFILE_WITGEN_NS: AtomicU64 = AtomicU64::new(0);
-pub static PROFILE_ACCUM_NS: AtomicU64 = AtomicU64::new(0);
-pub static PROFILE_EVALCHECK_NS: AtomicU64 = AtomicU64::new(0);
-
-#[inline]
-fn profiling() -> bool {
-    std::env::var_os("R0_PROFILE").is_some()
-}
-
-/// Run `f`; when profiling is armed, add its wall-time (ns) to `counter`.
-#[inline]
-fn timed<R>(counter: &AtomicU64, f: impl FnOnce() -> R) -> R {
-    if profiling() {
-        let t = Instant::now();
-        let r = f();
-        counter.fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
-        r
-    } else {
-        f()
-    }
-}
+// Per-phase profiling helpers (witgen/accumulate/eval_check timers) are shared
+// with the CPU HAL — see `super` (prove::hal). Armed by `R0_PROFILE`.
+use super::{timed, PROFILE_ACCUM_NS, PROFILE_EVALCHECK_NS, PROFILE_WITGEN_NS};
 
 #[derive(Default)]
 pub struct MetalCircuitHal;
