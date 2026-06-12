@@ -58,6 +58,8 @@
 //!    still ends in `commit(); wait_until_completed();`.
 
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 use anyhow::Result;
 use rayon::prelude::*;
@@ -90,6 +92,32 @@ use crate::{
 };
 
 type Hal = MetalHalPoseidon2;
+
+// Optional per-phase profiling of the circuit-specific CPU kernels. These run
+// on the CPU in both lanes, so their summed time is the proof's Amdahl floor.
+// Armed only when `R0_PROFILE` is set in the environment, so normal proving
+// pays nothing. Read via `crate::prove::phase_profile_ns`.
+pub static PROFILE_WITGEN_NS: AtomicU64 = AtomicU64::new(0);
+pub static PROFILE_ACCUM_NS: AtomicU64 = AtomicU64::new(0);
+pub static PROFILE_EVALCHECK_NS: AtomicU64 = AtomicU64::new(0);
+
+#[inline]
+fn profiling() -> bool {
+    std::env::var_os("R0_PROFILE").is_some()
+}
+
+/// Run `f`; when profiling is armed, add its wall-time (ns) to `counter`.
+#[inline]
+fn timed<R>(counter: &AtomicU64, f: impl FnOnce() -> R) -> R {
+    if profiling() {
+        let t = Instant::now();
+        let r = f();
+        counter.fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        r
+    } else {
+        f()
+    }
+}
 
 #[derive(Default)]
 pub struct MetalCircuitHal;
@@ -157,8 +185,10 @@ impl CircuitWitnessGenerator<Hal> for MetalCircuitHal {
             data: raw_buffer(data),
         };
         let preflight = raw_preflight(preflight);
-        ffi_wrap(|| unsafe {
-            risc0_circuit_rv32im_cpu_witgen(mode as u32, &buffers, &preflight, cycles as u32)
+        timed(&PROFILE_WITGEN_NS, || {
+            ffi_wrap(|| unsafe {
+                risc0_circuit_rv32im_cpu_witgen(mode as u32, &buffers, &preflight, cycles as u32)
+            })
         })
     }
 }
@@ -182,7 +212,11 @@ impl CircuitAccumulator<Hal> for MetalCircuitHal {
             mix: raw_buffer(mix),
         };
         let preflight = raw_preflight(preflight);
-        ffi_wrap(|| unsafe { risc0_circuit_rv32im_cpu_accum(&buffers, &preflight, cycles as u32) })
+        timed(&PROFILE_ACCUM_NS, || {
+            ffi_wrap(|| unsafe {
+                risc0_circuit_rv32im_cpu_accum(&buffers, &preflight, cycles as u32)
+            })
+        })
     }
 }
 
@@ -225,28 +259,31 @@ impl CircuitHal<Hal> for MetalCircuitHal {
 
         let args: &[&[Val]] = &[accum, data, out, mix];
 
-        (0..domain).into_par_iter().for_each(|cycle| {
-            let args: Vec<*const Val> = args.iter().map(|x| (*x).as_ptr()).collect();
-            let mut tot = ExtVal::ZERO;
-            unsafe {
-                risc0_circuit_rv32im_cpu_poly_fp(
-                    cycle,
-                    domain,
-                    poly_mix_pows.as_ptr(),
-                    args.as_ptr(),
-                    &mut tot,
-                )
-            };
-            let x = Val::ROU_FWD[po2 + EXP_PO2].pow(cycle);
-            let y = (Val::new(3) * x).pow(1 << po2);
-            let ret = tot * (y - Val::new(1)).inv();
+        timed(&PROFILE_EVALCHECK_NS, || {
+            (0..domain).into_par_iter().for_each(|cycle| {
+                let args: Vec<*const Val> = args.iter().map(|x| (*x).as_ptr()).collect();
+                let mut tot = ExtVal::ZERO;
+                unsafe {
+                    risc0_circuit_rv32im_cpu_poly_fp(
+                        cycle,
+                        domain,
+                        poly_mix_pows.as_ptr(),
+                        args.as_ptr(),
+                        &mut tot,
+                    )
+                };
+                let x = Val::ROU_FWD[po2 + EXP_PO2].pow(cycle);
+                let y = (Val::new(3) * x).pow(1 << po2);
+                let ret = tot * (y - Val::new(1)).inv();
 
-            // SAFETY: each cycle writes disjoint indices (i * domain + cycle).
-            let check =
-                unsafe { std::slice::from_raw_parts_mut(check.as_ptr() as *mut Val, check.len()) };
-            for i in 0..ExtVal::EXT_SIZE {
-                check[i * domain + cycle] = ret.elems()[i];
-            }
+                // SAFETY: each cycle writes disjoint indices (i * domain + cycle).
+                let check = unsafe {
+                    std::slice::from_raw_parts_mut(check.as_ptr() as *mut Val, check.len())
+                };
+                for i in 0..ExtVal::EXT_SIZE {
+                    check[i * domain + cycle] = ret.elems()[i];
+                }
+            });
         });
     }
 

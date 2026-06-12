@@ -16,6 +16,8 @@
 //! Usage:
 //!   host [hello|busy]           -> prove once, verify, print result
 //!   host bench N [hello|busy]   -> prove N times in one process, CSV out
+//!   host profile [hello|busy]   -> prove once, print per-phase wall-time
+//!                                  attribution from risc0's own scope! spans
 //!
 //! Workloads:
 //!   hello  one 32k-cycle segment; the guest echoes the input u32
@@ -140,6 +142,76 @@ fn workload_from(arg: Option<&str>) -> Workload {
     }
 }
 
+/// Prove once with the circuit-kernel phase timers armed, then attribute the
+/// proof's wall-time. The hybrid HAL times the three circuit-specific kernels
+/// (witgen, accumulate, eval_check) directly around their FFI calls when
+/// `R0_PROFILE` is set — these run on the CPU in BOTH lanes, so their summed
+/// time is the Amdahl floor the GPU cannot touch. The generic-op time (NTT /
+/// FRI / Merkle / hashing — the GPU's work in the metal lane) is the remainder
+/// of the measured prove wall-time. This explains the speedup: only the
+/// remainder is accelerated, so the circuit-kernel floor bounds it.
+///
+/// The HAL timers exist only on the metal lane. The circuit-kernel work is the
+/// identical CPU C++ FFI on identical data in both lanes, so the floor measured
+/// here is, by construction, ~lane-invariant; the CPU lane's own decomposition
+/// uses the same floor.
+fn run_profile(prover: &Rc<dyn ProverServer>, w: &Workload) {
+    if !risc0_circuit_rv32im::prove::metal_lane_selected() {
+        eprintln!(
+            "profile: per-phase timers are armed only on the metal lane; \
+             run without R0_DISABLE_METAL to measure the circuit-kernel floor."
+        );
+        return;
+    }
+
+    // Warm-up (not profiled): pays one-time pipeline/library setup.
+    prove_once(prover, w);
+
+    risc0_circuit_rv32im::prove::phase_profile_reset();
+    std::env::set_var("R0_PROFILE", "1");
+    let t = Instant::now();
+    let (_out, segments) = prove_once(prover, w);
+    let total_ms = t.elapsed().as_secs_f64() * 1000.0;
+    std::env::remove_var("R0_PROFILE");
+
+    let [witgen_ns, accum_ns, eval_ns] = risc0_circuit_rv32im::prove::phase_profile_ns();
+    let ms = |ns: u64| ns as f64 / 1e6;
+    let rows = [
+        ("circuit:witgen (CPU)", ms(witgen_ns)),
+        ("circuit:accumulate (CPU)", ms(accum_ns)),
+        ("circuit:eval_check (CPU)", ms(eval_ns)),
+    ];
+    let circuit_ms: f64 = rows.iter().map(|(_, m)| m).sum();
+
+    if circuit_ms <= 0.0 {
+        eprintln!("profile: no circuit-phase time recorded (unexpected on the metal lane).");
+        return;
+    }
+    let generic_ms = (total_ms - circuit_ms).max(0.0);
+
+    println!("=== phase profile: lane={} guest={} ===", lane(), w.name);
+    println!("segments: {segments}  (times summed across all segments)");
+    println!("{:<30} {:>12} {:>9}", "phase", "wall_ms", "% prove");
+    for (label, m) in &rows {
+        println!("{:<30} {:>12.1} {:>8.1}%", label, m, 100.0 * m / total_ms);
+    }
+    println!("{:<30} {:>12.1} {:>8.1}%", "circuit floor (CPU subtotal)", circuit_ms, 100.0 * circuit_ms / total_ms);
+    println!("{:<30} {:>12.1} {:>8.1}%", "generic ops (GPU on metal)", generic_ms, 100.0 * generic_ms / total_ms);
+    println!("{:<30} {:>12.1} {:>8.1}%", "prove (wall)", total_ms, 100.0);
+    println!(
+        "\nThe circuit floor ({:.1} ms, {:.0}% of this proof) runs on the CPU in\n\
+         both lanes — only the {:.0}% generic remainder is on the GPU. Speeding the\n\
+         GPU side to zero would still leave the floor, capping any further speedup\n\
+         of THIS lane at {:.2}x. The hybrid's value over pure CPU comes from\n\
+         accelerating that remainder; the eval_check-dominated floor is what a\n\
+         full GPU port could not move (see README, risc0#937/#999/#1310).",
+        circuit_ms,
+        100.0 * circuit_ms / total_ms,
+        100.0 * generic_ms / total_ms,
+        total_ms / circuit_ms
+    );
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
@@ -163,6 +235,9 @@ fn main() {
             let ms = t.elapsed().as_secs_f64() * 1000.0;
             println!("{:.1},{:.1}", ms, peak_rss_bytes() as f64 / 1e6);
         }
+    } else if args.get(1).map(String::as_str) == Some("profile") {
+        let w = workload_from(args.get(2).map(String::as_str));
+        run_profile(&prover, &w);
     } else {
         let w = workload_from(args.get(1).map(String::as_str));
         let (out, segments) = prove_once(&prover, &w);

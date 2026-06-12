@@ -88,6 +88,53 @@ Raw per-run wall time: [bench/hello-metal.csv](bench/hello-metal.csv),
   8.5 GB metal / 10.6 GB cpu. Memory is comparable; on the large workload the
   hybrid uses *less* peak RSS than the pure-CPU lane.
 
+## Where the time goes (phase attribution)
+
+`host profile <guest>` times the three circuit-specific CPU kernels directly
+around their FFI calls (armed by `R0_PROFILE`); the generic-op time — NTT / FRI
+/ Merkle / hashing, the GPU's work in the metal lane — is the remainder of the
+measured prove wall-time. One representative metal-lane run per workload:
+
+| Phase (metal lane) | hello | busy (6 seg) |
+|---|---|---|
+| circuit: witgen (CPU) | 4.8 ms (0.6 %) | 1.02 s (0.7 %) |
+| circuit: accumulate (CPU) | 29.0 ms (3.7 %) | 4.55 s (3.0 %) |
+| circuit: **eval_check** (CPU) | **561.5 ms (71.1 %)** | **125.31 s (83.4 %)** |
+| **circuit floor (CPU subtotal)** | **595.3 ms (75.3 %)** | **130.87 s (87.1 %)** |
+| generic ops (GPU on metal) | 195.0 ms (24.7 %) | 19.34 s (12.9 %) |
+| prove (wall) | 790.3 ms | 150.21 s |
+
+The circuit kernels run on the CPU in **both** lanes — the hybrid moves only the
+generic remainder to the GPU — so the floor is, by construction, lane-invariant
+(the identical `risc0_circuit_rv32im_cpu_*` FFI on identical witness data; the
+timers are in the Metal HAL, which is why `profile` runs on the metal lane).
+Pairing the measured floor with the 8-run lane medians:
+
+| | floor (CPU, both lanes) | generic on GPU | generic on CPU | GPU generic speedup | structural ceiling (cpu median ÷ floor) |
+|---|---|---|---|---|---|
+| hello | ~0.60 s | ~0.25 s | ~0.84 s | ~3.4× | ~2.4× |
+| busy | ~131 s | ~24 s | ~134 s | ~5.5× | ~2.0× |
+
+**This explains the otherwise coincidental "1.70× on both".** The two workloads
+reach the same overall ratio by *different* routes: `hello` has a larger generic
+fraction (25 %) but a smaller GPU win on its small transforms (~3.4×), while
+`busy` has a tiny generic fraction (13 %) but a larger GPU win on its bigger
+transforms (~5.5×). They net out near 1.70× by accident, not by law — do not
+read the equality as a stable property.
+
+It also bounds the headroom honestly. The `eval_check`-dominated circuit floor
+is exactly what RISC Zero's full Metal port could not move — `eval_check`
+overflowed Metal's register file and was deprecated in 2023, and even when it
+ran it was ~15× slower than CPU ([risc0#937](https://github.com/risc0/risc0/issues/937)
+/ [#999](https://github.com/risc0/risc0/issues/999) /
+[#1310](https://github.com/risc0/risc0/issues/1310); see the README). Because
+that floor is immovable on Metal and grows as a share of the proof on larger
+workloads (75 % → 87 % here), the structural ceiling for this hybrid is roughly
+**2.0–2.4× over pure CPU, falling toward 1× as the guest gets more
+circuit-heavy** — and the measured 1.70× is already most of the way there. A
+bigger multiplier needs a Metal `eval_check`, which is the open hard problem,
+not a tuning exercise.
+
 **Honesty on scope of the number.** Two workloads on one machine and one risc0
 version, receipt-verified every run. These are real measured speedups, not
 projections — but they are still rv32im single-process proving on Apple
@@ -146,9 +193,12 @@ RUST_LOG=debug r0-metal-doctor/target/release/r0-metal-doctor \
 
 - Two workload classes measured (single-segment `hello`, multi-segment `busy`);
   recursion / lift / join paths are unmeasured.
-- Circuit kernels (witgen/eval_check/accum) are CPU-bound; on this hardware the
-  busy workload still shows 1.70×, but a sufficiently circuit-dominated guest
-  could show less — measure your own case.
+- Circuit kernels (witgen/eval_check/accum) are CPU-bound and dominate the
+  proof (75 % of `hello`, 87 % of `busy` — see the phase attribution above), so
+  the structural ceiling is ~2.0–2.4× over pure CPU and falls toward 1× as the
+  guest gets more circuit-heavy. The measured 1.70× is already near that
+  ceiling; a sufficiently circuit-dominated guest will show less — measure your
+  own case with `host profile`.
 - Local `[patch]` against a vendored crate, pinned to **risc0-zkvm 3.0.5 /
   risc0-zkp 3.0.4 (exact) / rv32im circuit 4.0.4**. Not an upstream change; a
   version bump means re-vendoring and re-auditing the two cross-crate

@@ -19,7 +19,7 @@ two measured workloads.
 
 ## Use it (two steps)
 
-The whole change is a [4-file, ~450-line patch](patches/risc0-circuit-rv32im-4.0.4-metal-hybrid.diff)
+The whole change is a [4-file, ~530-line patch](patches/risc0-circuit-rv32im-4.0.4-metal-hybrid.diff)
 to `risc0-circuit-rv32im` 4.0.4, vendored in this repo.
 
 **1.** Point your workspace at the patched circuit crate:
@@ -59,6 +59,7 @@ R0_DISABLE_METAL=1 ./target/release/host   # lane=cpu          guest=hello ... R
 ./target/release/host busy                  # multi-segment guest (segments=6) ... RECEIPT VERIFIED
 ./target/release/host bench 8 hello         # in-process benchmark, CSV out
 ./target/release/host bench 8 busy          # multi-segment benchmark, CSV out
+./target/release/host profile hello         # per-phase wall-time attribution
 ```
 
 Independent lane observation (refuses to claim a lane it didn't watch run):
