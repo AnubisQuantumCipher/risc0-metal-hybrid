@@ -615,6 +615,7 @@ name = "hello"
 version = "0.1.0"
 dependencies = [
  "risc0-zkvm",
+ "sha2",
 ]
 
 [[package]]

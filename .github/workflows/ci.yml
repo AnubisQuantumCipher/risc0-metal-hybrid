@@ -19,6 +19,22 @@ permissions:
 # evidence — and, optionally, by the self-hosted job below.
 
 jobs:
+  lint-fmt:
+    # rustfmt is enforced so the tree can never drift from `cargo fmt` again.
+    # (fmt only parses manifests; no risc0 toolchain needed.)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1 (Node 24)
+        with:
+          persist-credentials: false
+      - name: rustfmt --check (all three workspaces, incl. the guest)
+        run: |
+          rustup component add rustfmt
+          cargo fmt --all --check --manifest-path e2e/Cargo.toml
+          cargo fmt --all --check --manifest-path e2e/methods/guest/Cargo.toml
+          cargo fmt --all --check --manifest-path m0-metalhal-smoke/Cargo.toml
+
   patch-consistency:
     # The vendored crate must be exactly pristine 4.0.4 + patches/. This guards
     # against the patch and the vendored tree drifting apart.
@@ -77,6 +93,27 @@ jobs:
         run: cargo build --release --manifest-path m0-metalhal-smoke/Cargo.toml --tests
       - name: Build the patched stack (compiles Metal shaders too)
         run: cargo build --release --manifest-path e2e/Cargo.toml
+      - name: clippy, -D warnings (smoke + host/methods)
+        # RISC0_SKIP_BUILD: clippy's rustc wrapper breaks the guest's separate
+        # riscv cross-compile; the guest is built by the build step above, the
+        # host-side crates are linted here. (The vendored crate compiles as a
+        # dependency but is not lint-gated — upstream code keeps upstream lints.)
+        run: |
+          rustup component add clippy
+          cargo clippy --release --all-targets --manifest-path m0-metalhal-smoke/Cargo.toml -- -D warnings
+          RISC0_SKIP_BUILD=1 cargo clippy --release --manifest-path e2e/Cargo.toml -p host -p methods -- -D warnings
+      - name: Host unit tests (mirrors vs independent reference vectors)
+        run: cargo test --release --manifest-path e2e/Cargo.toml -p host
+      - name: Vendored crate tests (temp copy; the GPU-dependent test self-skips here)
+        # Compiles the vendored crate's test module on every push (it is
+        # otherwise only compiled by validate.sh on Apple Silicon) and runs the
+        # 70 unit tests; the sliced-buffer negative test skips with a notice on
+        # this GPU-less runner.
+        run: |
+          work=$(mktemp -d)
+          cp -R vendor/risc0-circuit-rv32im "$work/"
+          cd "$work/risc0-circuit-rv32im"
+          cargo test --release --features prove --lib
       - name: CPU lane — assert CPU circuit HAL ran + receipt verifies
         run: |
           out=$(RUST_LOG=debug R0_DISABLE_METAL=1 ./e2e/target/release/host 2>&1)
@@ -85,6 +122,12 @@ jobs:
             || { echo "FAIL: CPU circuit HAL did not run"; exit 1; }
           echo "$out" | grep -q "RECEIPT VERIFIED" \
             || { echo "FAIL: receipt did not verify"; exit 1; }
+      - name: CPU lane — real-dependency hash guest verifies (reduced iters for CI)
+        run: |
+          out=$(R0_HASH_ITERS=64 R0_DISABLE_METAL=1 ./e2e/target/release/host hash 2>&1)
+          echo "$out" | tail -3
+          echo "$out" | grep -q "RECEIPT VERIFIED" \
+            || { echo "FAIL: hash workload receipt did not verify"; exit 1; }
       - name: Default lane — runtime probe must fall back to CPU on GPU-less runner
         run: |
           # No R0_DISABLE_METAL: the runtime Tier-2 probe should detect the
@@ -110,22 +153,22 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1 (Node 24)
         with:
           persist-credentials: false
-      - name: Smoke test — Metal HAL bit-identical to CPU (9 generic ops)
-        run: cargo test --release --manifest-path m0-metalhal-smoke/Cargo.toml
-      - name: Build e2e
-        run: cargo build --release --manifest-path e2e/Cargo.toml
-      - name: Metal hybrid lane — assert Metal module ran + receipt verifies
-        run: |
-          out=$(RUST_LOG=debug ./e2e/target/release/host 2>&1)
-          echo "$out" | grep -q "risc0_circuit_rv32im::prove::hal::metal" \
-            || { echo "FAIL: Metal circuit HAL did not run"; exit 1; }
-          echo "$out" | grep -q "risc0_zkp::hal::metal" \
-            || { echo "FAIL: no generic Metal HAL activity"; exit 1; }
-          echo "$out" | grep -q "RECEIPT VERIFIED" \
-            || { echo "FAIL: receipt did not verify"; exit 1; }
-      - name: Multi-segment workload also verifies on the Metal lane
-        run: |
-          out=$(./e2e/target/release/host busy 2>&1)
-          echo "$out"
-          echo "$out" | grep -q "RECEIPT VERIFIED" \
-            || { echo "FAIL: busy workload receipt did not verify"; exit 1; }
+      - name: Full validation suite (correctness + fail-closed; emits evidence bundle)
+        # Runs every check in order — patch consistency, fmt, clippy, smoke
+        # parity, vendored-crate tests (incl. the sliced-buffer negative test),
+        # all three workloads on BOTH lanes with the active lane asserted from
+        # the prover's own debug logs, and the fail-closed checks — and writes
+        # evidence/<UTC>/evidence.{json,md} + raw logs.
+        #
+        # --require-metal: this job exists to validate the Metal lane, so a
+        # runner without a usable Metal lane (misconfigured/virtualized/headless
+        # self-hosted box) FAILS the metal-capability check instead of skipping
+        # the metal checks and going green on CPU-only coverage.
+        run: ./scripts/validate.sh --ci --require-metal
+      - name: Upload validation evidence bundle
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: metal-lane-evidence
+          path: evidence/
+          if-no-files-found: warn

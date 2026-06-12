@@ -1417,13 +1417,14 @@ checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
 name = "host"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
  "methods",
  "risc0-circuit-rv32im",
  "risc0-zkvm",
  "serde",
+ "sha2",
  "tracing-subscriber 0.3.23",
 ]
 

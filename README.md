@@ -12,14 +12,16 @@ with the **stock verifier**.
 
 **Measured on an M4 Max** (same binary per lane, 8 controlled runs each, receipt
 verified every run): **1.70×** on a single-segment guest (842.0 ms vs 1433.3 ms
-pure-CPU) and **1.70×** on a circuit-heavier multi-segment guest (155.2 s vs
-264.4 s) — the speedup holds, not erodes, on the harder workload. Full data and
-honest scope in [RESULT.md](RESULT.md). Do not generalize the numbers beyond the
-two measured workloads.
+pure-CPU), **1.70×** on a circuit-heavier multi-segment guest (155.2 s vs
+264.4 s), and **1.63×** on a real-dependency guest — an iterated SHA-256 chain
+through the stock `sha2` crate (67.3 s vs 110.0 s) — so the speedup holds, not
+erodes, on harder and more realistic workloads. Full data and honest scope in
+[RESULT.md](RESULT.md). Do not generalize the numbers beyond the three measured
+workloads.
 
 ## Use it (two steps)
 
-The whole change is a [5-file, ~630-line patch](patches/risc0-circuit-rv32im-4.0.4-metal-hybrid.diff)
+The whole change is a [5-file, ~680-line patch](patches/risc0-circuit-rv32im-4.0.4-metal-hybrid.diff)
 to `risc0-circuit-rv32im` 4.0.4, vendored in this repo.
 
 **1.** Point your workspace at the patched circuit crate:
@@ -51,15 +53,33 @@ toolchain (rzup), macOS on Apple Silicon.
 
 ## Verify it yourself
 
+One command runs the entire validation suite — vendor integrity, fmt, clippy,
+the Metal-vs-CPU parity tests, the vendored-crate tests (including the
+sliced-buffer negative test), all three workloads on both lanes with the active
+lane asserted from the prover's own debug logs, the fail-closed checks, and
+serial benchmarks — and writes a machine-readable evidence bundle to
+`evidence/<UTC>/` (`evidence.json`, `evidence.md`, raw logs, bench CSVs):
+
+```bash
+./scripts/validate.sh           # full correctness + hello/hash benches (~45 min)
+./scripts/validate.sh --ci      # correctness + fail-closed only (no benches)
+./scripts/validate.sh --full    # adds the long busy benches (~40 min extra)
+```
+
+Or piece by piece:
+
 ```bash
 cd e2e
 cargo build --release
 ./target/release/host                       # lane=metal-hybrid guest=hello ... RECEIPT VERIFIED
 R0_DISABLE_METAL=1 ./target/release/host   # lane=cpu          guest=hello ... RECEIPT VERIFIED
 ./target/release/host busy                  # multi-segment guest (segments=6) ... RECEIPT VERIFIED
+./target/release/host hash                  # real-dependency guest (sha2 chain) ... RECEIPT VERIFIED
 ./target/release/host bench 8 hello         # in-process benchmark, CSV out
+./target/release/host bench 8 hash          # real-dependency benchmark, CSV out
 ./target/release/host bench 8 busy          # multi-segment benchmark, CSV out
 ./target/release/host profile hello         # per-phase wall-time attribution
+cargo test --release -p host                # host mirrors vs independent vectors
 ```
 
 Independent lane observation (refuses to claim a lane it didn't watch run):
@@ -73,21 +93,27 @@ GitHub-hosted macOS runners are virtualized and do **not** expose a Metal GPU
 that meets risc0's requirement (`MTLArgumentBuffersTier::Tier2`), so the Metal
 lane cannot run there. CI on hosted runners therefore validates what it can:
 
+- a **rustfmt** job and a **clippy** lane (`-D warnings`) keep the tree
+  lint-clean on every push;
 - a **patch-consistency** job (Linux) downloads pristine `risc0-circuit-rv32im`
   4.0.4 from crates.io, applies `patches/`, and asserts a full-tree match with
   `vendor/` — so the vendored crate can never drift from "pristine + patch";
-- the patched stack **builds** (Metal shaders included) and the **CPU lane
-  proves and verifies**;
+- the patched stack **builds** (Metal shaders included), the **host unit tests
+  pass**, and the **CPU lane proves and verifies** both the `hello` and the
+  real-dependency `hash` guests;
 - the **runtime GPU probe falls back to the CPU lane** on the GPU-less runner
   (the default, no-env invocation reports `lane=cpu` and still verifies) — so
   the graceful fallback is regression-tested, not just claimed.
 
 The Metal lane itself is validated on **real Apple Silicon hardware** — the
 controlled benchmark and the `metal-observed` + `RECEIPT VERIFIED` evidence were
-produced on an M4 Max and are committed (see RESULT.md, bench/, and the
-r0-metal-doctor evidence). A second, opt-in CI job runs the full Metal
-validation — the 9-test M0 smoke suite plus both workloads — on a self-hosted
-arm64 macOS runner (set repo variable `APPLE_SILICON_SELF_HOSTED=true`).
+produced on an M4 Max, are committed (see RESULT.md, bench/, and the
+r0-metal-doctor evidence), and each release carries the full
+`scripts/validate.sh` evidence bundle as a release asset. A second, opt-in CI
+job runs `./scripts/validate.sh --ci --require-metal` on a self-hosted arm64
+macOS runner (set repo variable `APPLE_SILICON_SELF_HOSTED=true`) and uploads
+the evidence bundle as a CI artifact; `--require-metal` makes a runner without
+a usable Metal lane fail the job rather than silently validating CPU-only.
 
 ## How it works
 
@@ -146,10 +172,12 @@ was never going to be.
 |---|---|
 | [vendor/risc0-circuit-rv32im/](vendor/risc0-circuit-rv32im/) | Patched circuit crate (Apache-2.0, modification notices per §4(b)) |
 | [patches/](patches/) | The same change as a reviewable diff against pristine 4.0.4 |
-| [e2e/](e2e/) | Working example host + guest + in-process A/B benchmark |
+| [e2e/](e2e/) | Working example host + guests + in-process A/B benchmark + unit tests |
 | [m0-metalhal-smoke/](m0-metalhal-smoke/) | Standalone proof that risc0-zkp's Metal HAL computes bit-identically to CPU — 9 tests: NTT expand/evaluate, NTT interpolate, forward→inverse round trip, bit-reverse, eltwise, zk-shift, FRI fold, Poseidon2 hash_rows, Poseidon2 hash_fold |
-| [bench/](bench/) | Raw benchmark CSVs from the controlled runs (`hello-*`, `busy-*`) |
+| [scripts/validate.sh](scripts/validate.sh) | The whole validation suite as one command → `evidence/<UTC>/` bundle |
+| [bench/](bench/) | Raw benchmark CSVs from the controlled runs (`hello-*`, `busy-*`, `hash-*`) |
 | [RESULT.md](RESULT.md) | Measured results, scope, limitations, honest recommendation |
+| [REAUDIT.md](REAUDIT.md) | Mandatory checklist before ANY pinned dependency bump |
 | [SECURITY.md](SECURITY.md) · [CHANGELOG.md](CHANGELOG.md) | Reporting policy and release history |
 
 ## Status, honestly
@@ -158,14 +186,22 @@ Correct on everything tested and hardened for real use, within its pinned
 scope. Every receipt verifies against the stock verifier; the M0 smoke suite
 shows all nine generic Metal ops bit-identical to the CPU; the lane probes for
 a real GPU and falls back to CPU instead of panicking; the buffer-pointer
-aliasing the hybrid relies on is asserted, not assumed; the example compiles
-with `disable-dev-mode`, so a stray `RISC0_DEV_MODE=1` fails closed instead of
-faking a proof; and CI checks that the vendored crate is exactly pristine 4.0.4
-plus the committed patch. The remaining caveats are scope, not soundness: it is
-pinned to **risc0-zkvm 3.0.5 / risc0-zkp 3.0.4 (exact) / circuit 4.0.4**,
-benchmarked on one machine across two workloads, and distributed as a vendored
-`[patch]` rather than an upstream path (a version bump means re-vendoring and
-re-auditing the pointer invariants). Related upstream issue:
+aliasing the hybrid relies on is asserted at runtime *and* covered by a
+negative test (a sliced buffer is rejected, not mis-addressed); the example
+compiles with `disable-dev-mode`, so a stray `RISC0_DEV_MODE=1` fails closed
+instead of faking a proof; malformed workload parameters exit non-zero instead
+of silently benchmarking something else; rustfmt and clippy (`-D warnings`)
+are CI-enforced; CI checks that the vendored crate is exactly pristine 4.0.4
+plus the committed patch; and `./scripts/validate.sh` reproduces the entire
+validation surface as one evidence bundle, attached to each release.
+
+The remaining caveats are scope, not soundness: it is pinned to **risc0-zkvm
+3.0.5 / risc0-zkp 3.0.4 (exact) / circuit 4.0.4**, benchmarked on one machine
+across three workloads, and distributed as a vendored `[patch]` rather than an
+upstream path. Recursion / lift / join paths and external `r0vm` proving are
+out of scope. A version bump requires the [REAUDIT.md](REAUDIT.md) checklist —
+the two cross-crate invariants the zero-copy hybrid rests on are properties of
+the *pinned* risc0-zkp, not its semver contract. Related upstream issue:
 [risc0/risc0#3753](https://github.com/risc0/risc0/issues/3753).
 
 ## License

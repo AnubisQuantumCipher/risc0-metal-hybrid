@@ -4,7 +4,7 @@
 
 [package]
 name = "host"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
@@ -21,3 +21,6 @@ risc0-circuit-rv32im = { version = "=4.0.4", features = ["prove"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = "1.0"
 libc = "0.2"
+# Host-side mirror of the hash guest's chain. Exact-pinned to the SAME version
+# the guest uses, so the journal assertion compares like with like.
+sha2 = "=0.10.9"

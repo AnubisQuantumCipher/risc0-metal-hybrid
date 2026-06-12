@@ -1,1 +1,3 @@
-fn main() { println!("see tests: cargo test -- --nocapture"); }
+fn main() {
+    println!("see tests: cargo test -- --nocapture");
+}
