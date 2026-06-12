@@ -29,6 +29,33 @@
 //!
 //! The hash suite is `Poseidon2HashSuite::new_suite()`, identical to the CPU and
 //! verifier paths, so a proof produced here verifies with the stock verifier.
+//!
+//! # Safety: two load-bearing invariants on the pinned risc0-zkp
+//!
+//! The zero-copy aliasing between the GPU and the CPU C++ kernels is only sound
+//! because BOTH of these hold in risc0-zkp 3.0.4, the exactly-pinned dependency:
+//!
+//! 1. **Offset-0 buffers.** `BufferImpl::as_ptr()` returns the MTLBuffer base
+//!    and ignores any slice offset (risc0-zkp `src/hal/metal.rs:304-306`). Every
+//!    buffer this HAL hands a CPU kernel must therefore be a base allocation.
+//!    This is *enforced at runtime* by `checked_base_ptr` below.
+//!
+//! 2. **Per-op synchronous dispatch (GPU quiescence at every hand-off).** Each
+//!    generic Metal op commits its command buffer and blocks on it:
+//!    `cmd_buffer.commit(); cmd_buffer.wait_until_completed();` (risc0-zkp
+//!    `src/hal/metal.rs:475-476`), so the GPU is idle and its writes are visible
+//!    to the CPU before any CPU C++ kernel touches the shared buffer, and
+//!    vice-versa. There is no async command-buffer overlap. This invariant is
+//!    *not enforceable from here* (it lives entirely in risc0-zkp and leaves no
+//!    observable handle), which is the primary reason risc0-zkp is pinned with
+//!    `=` rather than a caret. If a future risc0-zkp moved the generic HAL to
+//!    asynchronous command buffers -- the obvious performance change for them to
+//!    make -- this invariant would break silently: CPU kernels could read or
+//!    write a buffer the GPU has not finished with, corrupting witnesses
+//!    nondeterministically. The stock verifier would reject the resulting
+//!    receipt (so this is an availability failure, not a soundness one), but the
+//!    re-audit on any version bump MUST re-confirm that every `dispatch*` path
+//!    still ends in `commit(); wait_until_completed();`.
 
 use std::rc::Rc;
 

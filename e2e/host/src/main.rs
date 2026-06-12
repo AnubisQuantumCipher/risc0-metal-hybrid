@@ -9,7 +9,7 @@
 //! `risc0_circuit_rv32im::prove::segment_prover()`, which on Apple Silicon
 //! auto-selects the Metal hybrid lane behind a runtime GPU capability probe
 //! (generic STARK ops on the GPU, circuit kernels on the CPU). Set
-//! `ZKF_DISABLE_METAL=1` to force the pure-CPU lane in the same binary for a
+//! `R0_DISABLE_METAL=1` to force the pure-CPU lane in the same binary for a
 //! controlled A/B comparison. The `disable-dev-mode` feature is enabled, so a
 //! stray `RISC0_DEV_MODE=1` cannot produce fake receipts or benchmark rows.
 //!
@@ -19,7 +19,7 @@
 //!
 //! Workloads:
 //!   hello  one 32k-cycle segment; the guest echoes the input u32
-//!   busy   multi-segment; the guest runs ZKF_BUSY_ITERS (default 1,000,000)
+//!   busy   multi-segment; the guest runs R0_BUSY_ITERS (default 1,000,000)
 //!          iterations of a data-dependent multiply-add loop
 
 use std::rc::Rc;
@@ -59,16 +59,16 @@ fn hello_workload() -> Workload {
 }
 
 fn busy_workload() -> Workload {
-    // Fail closed on a malformed ZKF_BUSY_ITERS: a benchmark must never
+    // Fail closed on a malformed R0_BUSY_ITERS: a benchmark must never
     // silently run a different workload than the operator asked for.
-    let iters: u32 = match std::env::var("ZKF_BUSY_ITERS") {
+    let iters: u32 = match std::env::var("R0_BUSY_ITERS") {
         Err(std::env::VarError::NotPresent) => 1_000_000,
         Ok(v) => v.parse().unwrap_or_else(|_| {
-            eprintln!("invalid ZKF_BUSY_ITERS '{v}' (expected a u32 iteration count)");
+            eprintln!("invalid R0_BUSY_ITERS '{v}' (expected a u32 iteration count)");
             std::process::exit(2);
         }),
         Err(e) => {
-            eprintln!("invalid ZKF_BUSY_ITERS: {e}");
+            eprintln!("invalid R0_BUSY_ITERS: {e}");
             std::process::exit(2);
         }
     };
@@ -119,7 +119,7 @@ fn prove_once(prover: &Rc<dyn ProverServer>, w: &Workload) -> (u32, usize) {
 }
 
 /// Lane reporting delegates to the patched circuit crate — the same function
-/// segment_prover() itself consults (compile target + ZKF_DISABLE_METAL +
+/// segment_prover() itself consults (compile target + R0_DISABLE_METAL +
 /// runtime GPU probe) — so this label cannot drift from the selected lane.
 fn lane() -> &'static str {
     if risc0_circuit_rv32im::prove::metal_lane_selected() {

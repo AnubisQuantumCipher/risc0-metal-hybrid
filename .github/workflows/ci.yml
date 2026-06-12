@@ -53,7 +53,7 @@ jobs:
   build-and-cpu-lane:
     # Hosted Apple Silicon runner: builds the patched stack, proves the CPU
     # lane, and confirms the runtime probe falls back to CPU on the GPU-less
-    # virtualized runner (default invocation, no ZKF_DISABLE_METAL).
+    # virtualized runner (default invocation, no R0_DISABLE_METAL).
     runs-on: macos-14
     timeout-minutes: 45
     env:
@@ -79,7 +79,7 @@ jobs:
         run: cargo build --release --manifest-path e2e/Cargo.toml
       - name: CPU lane — assert CPU circuit HAL ran + receipt verifies
         run: |
-          out=$(RUST_LOG=debug ZKF_DISABLE_METAL=1 ./e2e/target/release/host 2>&1)
+          out=$(RUST_LOG=debug R0_DISABLE_METAL=1 ./e2e/target/release/host 2>&1)
           echo "$out" | tail -5
           echo "$out" | grep -q "risc0_circuit_rv32im::prove::hal::cpu" \
             || { echo "FAIL: CPU circuit HAL did not run"; exit 1; }
@@ -87,7 +87,7 @@ jobs:
             || { echo "FAIL: receipt did not verify"; exit 1; }
       - name: Default lane — runtime probe must fall back to CPU on GPU-less runner
         run: |
-          # No ZKF_DISABLE_METAL: the runtime Tier-2 probe should detect the
+          # No R0_DISABLE_METAL: the runtime Tier-2 probe should detect the
           # virtualized GPU is unsuitable and fall back rather than panic.
           out=$(RUST_LOG=debug ./e2e/target/release/host 2>&1)
           echo "$out" | tail -5

@@ -16,7 +16,7 @@ CPU. It produces receipts that pass the **stock verifier**.
 
 The lane is selected at runtime behind a GPU capability probe: on a host with a
 Tier-2-argument-buffer Metal GPU the hybrid lane runs; on any other host
-(virtual machine, hosted CI runner, `ZKF_DISABLE_METAL=1`) it falls back to the
+(virtual machine, hosted CI runner, `R0_DISABLE_METAL=1`) it falls back to the
 CPU lane and says so on stderr. It never panics to choose a lane, and it never
 silently downgrades.
 
@@ -50,14 +50,14 @@ constraint kernels remain CPU-bound.
 
 ## Controlled benchmark
 
-One release binary per lane, switched only by `ZKF_DISABLE_METAL`, proving
+One release binary per lane, switched only by `R0_DISABLE_METAL`, proving
 in-process. One unmeasured warm-up run, then 8 measured runs per lane. No
 mid-run recompiles. The receipt is verified and the journal asserted on every
 run. Two workloads are measured:
 
 - **`hello`** — one 32,768-cycle segment; the guest echoes a `u32`.
 - **`busy`** — a multi-segment workload (6 segments here); the guest runs a
-  data-dependent multiply-add loop (`ZKF_BUSY_ITERS`, default 1,000,000). This
+  data-dependent multiply-add loop (`R0_BUSY_ITERS`, default 1,000,000). This
   exercises far more witgen / accumulate / eval_check (the CPU-bound circuit
   kernels), so it is the harder case for a hybrid that only offloads the
   generic STARK ops.
@@ -112,7 +112,7 @@ risc0-zkvm = { version = "=3.0.5", features = ["prove"] }
 No `metal` feature, no env var, no code change. On `target_os=macos,
 target_arch=aarch64` with a Tier-2 Metal GPU the circuit crate auto-selects the
 hybrid lane and auto-enables risc0-zkp's Metal HAL. Force the CPU lane for
-comparison with `ZKF_DISABLE_METAL=1`. Prove in-process so the patched lane is
+comparison with `R0_DISABLE_METAL=1`. Prove in-process so the patched lane is
 used:
 
 ```rust
@@ -131,9 +131,9 @@ Reproduce the benchmark:
 cd e2e
 cargo build --release
 ./target/release/host bench 8 hello                 # metal-hybrid, single segment
-ZKF_DISABLE_METAL=1 ./target/release/host bench 8 hello   # cpu
+R0_DISABLE_METAL=1 ./target/release/host bench 8 hello   # cpu
 ./target/release/host bench 8 busy                  # metal-hybrid, multi-segment
-ZKF_DISABLE_METAL=1 ./target/release/host bench 8 busy    # cpu
+R0_DISABLE_METAL=1 ./target/release/host bench 8 busy    # cpu
 
 # Independent lane observation (separate checkout):
 git clone https://github.com/AnubisQuantumCipher/r0-metal-doctor
@@ -151,7 +151,15 @@ RUST_LOG=debug r0-metal-doctor/target/release/r0-metal-doctor \
   could show less — measure your own case.
 - Local `[patch]` against a vendored crate, pinned to **risc0-zkvm 3.0.5 /
   risc0-zkp 3.0.4 (exact) / rv32im circuit 4.0.4**. Not an upstream change; a
-  version bump means re-vendoring and re-auditing the buffer-pointer invariants.
+  version bump means re-vendoring and re-auditing the two cross-crate
+  invariants the zero-copy hybrid rests on: (1) offset-0 buffer pointers
+  (runtime-enforced by `checked_base_ptr`) and (2) **per-op synchronous GPU
+  dispatch** — every generic Metal op ends in `commit(); wait_until_completed();`
+  (risc0-zkp `src/hal/metal.rs:475-476`), which is what makes the GPU quiescent
+  at each CPU hand-off. The second invariant is not runtime-enforceable; a
+  future risc0-zkp that switched to async command buffers would break it
+  silently (the verifier would still reject the bad receipt, so it fails closed,
+  but it is the first thing the re-audit checklist names).
 - Apple Silicon only (the whole point). Hosts without a Tier-2 Metal GPU fall
   back to the CPU lane automatically.
 

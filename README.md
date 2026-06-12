@@ -19,7 +19,7 @@ two measured workloads.
 
 ## Use it (two steps)
 
-The whole change is a [4-file, ~420-line patch](patches/risc0-circuit-rv32im-4.0.4-metal-hybrid.diff)
+The whole change is a [4-file, ~450-line patch](patches/risc0-circuit-rv32im-4.0.4-metal-hybrid.diff)
 to `risc0-circuit-rv32im` 4.0.4, vendored in this repo.
 
 **1.** Point your workspace at the patched circuit crate:
@@ -43,7 +43,7 @@ receipt.verify(IMAGE_ID)?;
 That's it. On Apple Silicon the Metal hybrid lane is selected automatically —
 no feature flags, no env vars — behind a runtime GPU capability probe: a host
 without a Tier-2 Metal GPU (a VM, a hosted CI runner) falls back to the CPU lane
-and says so on stderr, rather than panicking. `ZKF_DISABLE_METAL=1` forces the
+and says so on stderr, rather than panicking. `R0_DISABLE_METAL=1` forces the
 CPU lane (handy for A/B). Other platforms are untouched (CPU/CUDA as stock).
 
 Requires: `risc0-zkvm = "=3.0.5"` with the `prove` feature, the RISC Zero
@@ -55,7 +55,7 @@ toolchain (rzup), macOS on Apple Silicon.
 cd e2e
 cargo build --release
 ./target/release/host                       # lane=metal-hybrid guest=hello ... RECEIPT VERIFIED
-ZKF_DISABLE_METAL=1 ./target/release/host   # lane=cpu          guest=hello ... RECEIPT VERIFIED
+R0_DISABLE_METAL=1 ./target/release/host   # lane=cpu          guest=hello ... RECEIPT VERIFIED
 ./target/release/host busy                  # multi-segment guest (segments=6) ... RECEIPT VERIFIED
 ./target/release/host bench 8 hello         # in-process benchmark, CSV out
 ./target/release/host bench 8 busy          # multi-segment benchmark, CSV out
@@ -111,7 +111,33 @@ shipped, tested, and unreachable in stock builds. The circuit traits
   verifier, which is why receipts verify unchanged.
 
 What this is **not**: a full GPU port. The ~90K-line circuit constraint kernels
-still run on CPU. See RESULT.md for the precise GPU/CPU split table.
+still run on CPU. See RESULT.md for the precise GPU/CPU split table. That split
+is not a compromise — it is the shape the problem actually has, as RISC Zero's
+own history shows.
+
+## Why a hybrid is the right shape, not a partial port
+
+RISC Zero shipped a full Metal circuit lane and then **deprecated it in 2023**.
+The generated `eval_check` kernel overflowed Metal's temporary-register limit
+and would not compile on recent macOS ([risc0#937](https://github.com/risc0/risc0/issues/937),
+"Compute function exceeds available temporary registers"); the deprecation
+issue ([risc0#999](https://github.com/risc0/risc0/issues/999)) records that
+"there doesn't seem to be any easy/low cost way to fix the code generator for
+`eval_check`, so our best option … is to deprecate Metal support." Even where a
+Metal `eval_check` did run, it was pathologically slow: a later report on an M2
+Ultra ([risc0#1310](https://github.com/risc0/risc0/issues/1310)) measured
+**`eval_check` at 307 s on Metal versus ~20 s on the CPU** for the same proof.
+
+The same #1310 report notes the other half of the picture: the Merkle-tree
+commitments saw "significant performance improvement" on Metal. That is the
+whole thesis. The circuit-specific kernels (`eval_check`, witgen, accumulate)
+are exactly what makes a full GPU port fail — register pressure and a 15×
+slowdown — while the generic STARK ops (NTT, FRI, Merkle, hashing) are exactly
+what the GPU already wins at. The hybrid puts each piece where it belongs:
+generic ops on the GPU via risc0's own shipped HAL, circuit kernels on the CPU.
+It is not a watered-down version of the full port — given this circuit's shape
+and the documented register limit, it is the load-shaped solution the full port
+was never going to be.
 
 ## Repo layout
 

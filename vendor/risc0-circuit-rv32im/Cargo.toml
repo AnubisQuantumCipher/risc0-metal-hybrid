@@ -122,11 +122,18 @@ version = "3.0.1"
 default-features = false
 
 # Pinned EXACTLY: the hybrid Metal circuit HAL depends on risc0-zkp internals
-# that are not part of its semver contract — most importantly that
-# `BufferImpl::as_ptr()` returns the MTLBuffer base pointer and that every
-# buffer the prover passes the circuit HAL is a full (offset-0) allocation.
-# Those invariants were audited against 3.0.4 specifically; a version bump
-# requires re-auditing (see src/prove/hal/metal.rs `checked_base_ptr`).
+# that are not part of its semver contract. A version bump requires re-auditing
+# all THREE of these against the new risc0-zkp source (see the "Safety" section
+# of src/prove/hal/metal.rs for the full argument):
+#   1. `BufferImpl::as_ptr()` still returns the MTLBuffer base, ignoring slice
+#      offset (3.0.4 src/hal/metal.rs:304-306). Runtime-enforced by
+#      `checked_base_ptr`, but the as_ptr semantics must not change underneath it.
+#   2. Every generic Metal op still ends in per-op synchronous dispatch --
+#      `commit(); wait_until_completed();` (3.0.4 src/hal/metal.rs:475-476) -- so
+#      the GPU is quiescent at every CPU hand-off. NOT runtime-enforceable; a
+#      move to async command buffers would silently corrupt witnesses.
+#   3. Every buffer the prover hands the circuit HAL is a full (offset-0)
+#      allocation (verified across all call sites in 3.0.4's prove path).
 [dependencies.risc0-zkp]
 version = "=3.0.4"
 default-features = false

@@ -48,7 +48,7 @@ pub trait SegmentProver {
     fn prove_core(&self, preflight_results: PreflightResults) -> Result<Seal>;
 }
 
-/// True when `ZKF_DISABLE_METAL` is set to a non-empty value other than "0".
+/// True when `R0_DISABLE_METAL` is set to a non-empty value other than "0".
 #[cfg(all(
     feature = "prove",
     not(feature = "cuda"),
@@ -56,7 +56,7 @@ pub trait SegmentProver {
     target_arch = "aarch64"
 ))]
 fn metal_disabled_by_env() -> bool {
-    std::env::var("ZKF_DISABLE_METAL").is_ok_and(|v| v != "0" && !v.is_empty())
+    std::env::var("R0_DISABLE_METAL").is_ok_and(|v| v != "0" && !v.is_empty())
 }
 
 /// Runtime probe for the two *host-variable* preconditions `MetalHal::new()`
@@ -80,7 +80,7 @@ fn metal_runtime_available() -> bool {
 }
 
 /// Single source of truth for hybrid-lane selection: compile target, the
-/// `ZKF_DISABLE_METAL` opt-out, and the runtime GPU capability probe. Hosts
+/// `R0_DISABLE_METAL` opt-out, and the runtime GPU capability probe. Hosts
 /// that want to report the active lane should call this instead of
 /// re-deriving it from the environment.
 pub fn metal_lane_selected() -> bool {
@@ -123,7 +123,7 @@ pub fn segment_prover() -> Result<Box<dyn SegmentProver>> {
             self::hal::cuda::segment_prover()
         } else if #[cfg(all(feature = "prove", target_os = "macos", target_arch = "aarch64"))] {
             // Apple Silicon: generic STARK ops on the Metal GPU, circuit kernels
-            // on CPU. Opt out with ZKF_DISABLE_METAL=1. Hosts without a Tier-2
+            // on CPU. Opt out with R0_DISABLE_METAL=1. Hosts without a Tier-2
             // Metal GPU fall back to the CPU lane (with a one-time warning)
             // instead of panicking inside MetalHal::new().
             if metal_lane_selected() {
