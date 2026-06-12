@@ -71,6 +71,7 @@ Or piece by piece:
 ```bash
 cd e2e
 cargo build --release
+./target/release/host lane                  # lane=metal-hybrid (capability probe, no proving)
 ./target/release/host                       # lane=metal-hybrid guest=hello ... RECEIPT VERIFIED
 R0_DISABLE_METAL=1 ./target/release/host   # lane=cpu          guest=hello ... RECEIPT VERIFIED
 ./target/release/host busy                  # multi-segment guest (segments=6) ... RECEIPT VERIFIED
@@ -165,6 +166,39 @@ generic ops on the GPU via risc0's own shipped HAL, circuit kernels on the CPU.
 It is not a watered-down version of the full port — given this circuit's shape
 and the documented register limit, it is the load-shaped solution the full port
 was never going to be.
+
+## The v0.2.0 hardening record (audit → fix)
+
+This repo was independently audited on 2026-06-12. The verdict was positive
+("real, focused, technically coherent … unusually good evidence hygiene") but
+named seven concrete gaps between "adopter-ready experimental" and
+industry-ready. [v0.2.0](https://github.com/AnubisQuantumCipher/risc0-metal-hybrid/releases/tag/v0.2.0)
+closed every one of them, with no change to the proving lane's algorithmic
+behavior:
+
+| Audit finding | Fix |
+|---|---|
+| `cargo fmt --check` failed in `e2e` and `m0-metalhal-smoke` | Formatted all **three** workspaces (the new gate also caught the never-checked guest crate) and CI-enforced rustfmt so it cannot regress |
+| No repo-level command running the full validation suite | [`scripts/validate.sh`](scripts/validate.sh): every check in order → machine-readable `evidence/<UTC>/` bundle (JSON + Markdown + raw logs + bench CSVs); `--ci` / `--full` / `--require-metal` modes |
+| No clippy lane | Clippy clean at `-D warnings` (smoke + host/methods), CI-enforced |
+| Metal validation evidence only as benchmark CSVs | Each release carries the full evidence bundle as a release asset; the self-hosted Metal CI job uploads its bundle as a CI artifact |
+| No re-audit checklist for pinned dependency bumps | [REAUDIT.md](REAUDIT.md) — mandatory, with the two cross-crate invariants cited to exact risc0-zkp 3.0.4 source lines and the known `block v0.1.6` future-incompatibility |
+| No negative test around sliced Metal buffers | `checked_base_ptr_rejects_sliced_buffer` inside the vendored HAL: constructs a real sliced Metal buffer and proves the offset-0 guard rejects it (runs on real GPU; self-skips with a notice elsewhere) |
+| Only template `hello` and synthetic `busy` workloads | New real-dependency **`hash`** guest — iterated SHA-256 through the stock, exact-pinned `sha2` crate, journal digest asserted against a host-side mirror that is itself unit-tested against independently computed vectors. Measured: **1.63×** |
+
+Two further fixes came from an adversarial review of the hardening itself,
+run before tagging: GPU capability in `validate.sh` is probed **without
+proving** (`host lane`), so "GPU present but the Metal lane is broken" FAILS
+loudly instead of being skipped as "no GPU"; and the dedicated Metal CI job
+passes `--require-metal`, so a misconfigured self-hosted runner fails the job
+rather than silently validating CPU-only. Full details in
+[CHANGELOG.md](CHANGELOG.md) and the merged
+[PR #2](https://github.com/AnubisQuantumCipher/risc0-metal-hybrid/pull/2).
+
+The release was validated three independent ways before tagging: the full
+suite on Apple M4 Max at the release tree (**26 pass / 0 fail / 0 skip**), a
+fresh clone of the release ref (**20/20 PASS**, `--ci --require-metal`), and
+hosted CI. The evidence bundle attached to the release reproduces all of it.
 
 ## Repo layout
 

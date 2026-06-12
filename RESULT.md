@@ -3,7 +3,10 @@
 Date: 2026-06-11/12 · Host: Apple M4 Max (16-core CPU, 40-core GPU), 48 GB
 unified memory, macOS 26.0 · risc0 v3.0.5 / rv32im circuit 4.0.4. Every number
 below was measured on this machine and is reproducible with the commands at the
-end (or in one shot with `./scripts/validate.sh`).
+end (or in one shot with `./scripts/validate.sh`). The
+[v0.2.0 release](https://github.com/AnubisQuantumCipher/risc0-metal-hybrid/releases/tag/v0.2.0)
+carries the full machine-readable evidence bundle for that suite — 26 checks,
+0 failures, 0 skips at the release tree — as a release asset.
 
 ## What this is
 
