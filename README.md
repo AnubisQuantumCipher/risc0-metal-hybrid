@@ -150,6 +150,7 @@ was never going to be.
 | [m0-metalhal-smoke/](m0-metalhal-smoke/) | Standalone proof that risc0-zkp's Metal HAL computes bit-identically to CPU — 9 tests: NTT expand/evaluate, NTT interpolate, forward→inverse round trip, bit-reverse, eltwise, zk-shift, FRI fold, Poseidon2 hash_rows, Poseidon2 hash_fold |
 | [bench/](bench/) | Raw benchmark CSVs from the controlled runs (`hello-*`, `busy-*`) |
 | [RESULT.md](RESULT.md) | Measured results, scope, limitations, honest recommendation |
+| [SECURITY.md](SECURITY.md) · [CHANGELOG.md](CHANGELOG.md) | Reporting policy and release history |
 
 ## Status, honestly
 
