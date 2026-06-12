@@ -67,14 +67,36 @@ type Hal = MetalHalPoseidon2;
 #[derive(Default)]
 pub struct MetalCircuitHal;
 
+/// Return the host base pointer of a Metal buffer, asserting that the buffer
+/// is a full allocation and not a sliced view. In risc0-zkp 3.0.4,
+/// `BufferImpl::as_ptr()` returns the underlying MTLBuffer base and ignores
+/// any slice offset, while `view()` honors the offset — so equality of the
+/// two addresses proves offset == 0. Every buffer the prover currently hands
+/// this HAL is a fresh full allocation (`alloc_elem` / `alloc_elem_init` /
+/// `copy_from_elem`); this check turns that cross-crate invariant into a loud
+/// failure instead of silent witness corruption if a future risc0-zkp or
+/// caller change ever passes a sliced buffer.
+fn checked_base_ptr(buf: &MetalBuffer<Val>) -> *const Val {
+    let base = buf.as_ptr() as *const Val;
+    let mut view_base: usize = 0;
+    buf.view(|s| view_base = s.as_ptr() as usize);
+    assert_eq!(
+        base as usize,
+        view_base,
+        "Metal buffer '{}' reached the hybrid circuit HAL as a sliced view; \
+         the CPU circuit kernels require base (offset-0) buffers",
+        buf.name()
+    );
+    base
+}
+
 /// Build a `RawBuffer` view over a Metal buffer. The Metal buffer is unified
-/// shared memory, so `as_ptr()` is a valid host pointer addressing the same
-/// bytes the GPU uses. The circuit buffers are always allocated with offset 0
-/// (via `MetaBuffer::new` -> `alloc_elem_init`), so the base pointer is correct.
+/// shared memory, so the (offset-checked) base pointer is a valid host pointer
+/// addressing the same bytes the GPU uses.
 fn raw_buffer(mb: &MetaBuffer<Hal>) -> RawBuffer {
     debug_assert_eq!(mb.buf.size(), mb.rows * mb.cols);
     RawBuffer {
-        buf: mb.buf.as_ptr() as *const Val,
+        buf: checked_base_ptr(&mb.buf),
         rows: mb.rows,
         cols: mb.cols,
         checked: mb.checked,
@@ -153,14 +175,14 @@ impl CircuitHal<Hal> for MetalCircuitHal {
         let domain = steps * INV_RATE;
         let poly_mix_pows = map_pow(poly_mix, POLY_MIX_POWERS);
 
-        // Unified shared memory: as_ptr() addresses the same bytes the GPU uses.
-        // These buffers are allocated with offset 0, so the base pointer is the
-        // start of the data. We mirror the CPU eval_check exactly, running the
-        // per-cycle poly_fp constraint kernel across the LDE domain in parallel.
-        let data = groups[REGISTER_GROUP_DATA].as_ptr() as *const Val;
-        let accum = groups[REGISTER_GROUP_ACCUM].as_ptr() as *const Val;
-        let mix = globals[GLOBAL_MIX].as_ptr() as *const Val;
-        let out = globals[GLOBAL_OUT].as_ptr() as *const Val;
+        // Unified shared memory: the (offset-checked) base pointer addresses
+        // the same bytes the GPU uses. We mirror the CPU eval_check exactly,
+        // running the per-cycle poly_fp constraint kernel across the LDE
+        // domain in parallel.
+        let data = checked_base_ptr(groups[REGISTER_GROUP_DATA]);
+        let accum = checked_base_ptr(groups[REGISTER_GROUP_ACCUM]);
+        let mix = checked_base_ptr(globals[GLOBAL_MIX]);
+        let out = checked_base_ptr(globals[GLOBAL_OUT]);
 
         let data = unsafe { std::slice::from_raw_parts(data, groups[REGISTER_GROUP_DATA].size()) };
         let accum =
@@ -170,7 +192,7 @@ impl CircuitHal<Hal> for MetalCircuitHal {
         // Const slice (Sync) captured by the parallel closure; re-cast to mut
         // inside, exactly as the CPU implementation does. Writes are disjoint.
         let check = unsafe {
-            std::slice::from_raw_parts(check.as_ptr() as *const Val, check.size())
+            std::slice::from_raw_parts(checked_base_ptr(check), check.size())
         };
         let poly_mix_pows = poly_mix_pows.as_slice();
 

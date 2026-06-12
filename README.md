@@ -10,11 +10,12 @@ existing-but-orphaned Metal HAL, while the circuit-specific kernels keep running
 on the CPU, over shared unified-memory buffers. Receipts verify with the
 **stock verifier**.
 
-**Measured on an M4 Max** (same binary, same guest, 8 controlled runs per lane):
-median **832.7 ms** vs **1489.9 ms** pure-CPU — **1.79×** on the test workload,
-with far lower variance (stdev 8 ms vs 105 ms). Full data and honest scope in
-[RESULT.md](RESULT.md). Do not generalize the number beyond the measured
-workload.
+**Measured on an M4 Max** (same binary per lane, 8 controlled runs each, receipt
+verified every run): **1.70×** on a single-segment guest (842.0 ms vs 1433.3 ms
+pure-CPU) and **1.70×** on a circuit-heavier multi-segment guest (155.2 s vs
+264.4 s) — the speedup holds, not erodes, on the harder workload. Full data and
+honest scope in [RESULT.md](RESULT.md). Do not generalize the numbers beyond the
+two measured workloads.
 
 ## Use it (two steps)
 
@@ -40,8 +41,10 @@ receipt.verify(IMAGE_ID)?;
 ```
 
 That's it. On Apple Silicon the Metal hybrid lane is selected automatically —
-no feature flags, no env vars. `ZKF_DISABLE_METAL=1` forces the CPU lane (handy
-for A/B). Other platforms are untouched (CPU/CUDA as stock).
+no feature flags, no env vars — behind a runtime GPU capability probe: a host
+without a Tier-2 Metal GPU (a VM, a hosted CI runner) falls back to the CPU lane
+and says so on stderr, rather than panicking. `ZKF_DISABLE_METAL=1` forces the
+CPU lane (handy for A/B). Other platforms are untouched (CPU/CUDA as stock).
 
 Requires: `risc0-zkvm = "=3.0.5"` with the `prove` feature, the RISC Zero
 toolchain (rzup), macOS on Apple Silicon.
@@ -51,9 +54,11 @@ toolchain (rzup), macOS on Apple Silicon.
 ```bash
 cd e2e
 cargo build --release
-./target/release/host                       # lane=metal-hybrid ... RECEIPT VERIFIED
-ZKF_DISABLE_METAL=1 ./target/release/host   # lane=cpu          ... RECEIPT VERIFIED
-./target/release/host bench 8               # in-process benchmark, CSV out
+./target/release/host                       # lane=metal-hybrid guest=hello ... RECEIPT VERIFIED
+ZKF_DISABLE_METAL=1 ./target/release/host   # lane=cpu          guest=hello ... RECEIPT VERIFIED
+./target/release/host busy                  # multi-segment guest (segments=6) ... RECEIPT VERIFIED
+./target/release/host bench 8 hello         # in-process benchmark, CSV out
+./target/release/host bench 8 busy          # multi-segment benchmark, CSV out
 ```
 
 Independent lane observation (refuses to claim a lane it didn't watch run):
@@ -65,14 +70,23 @@ runtime logs' module paths.
 
 GitHub-hosted macOS runners are virtualized and do **not** expose a Metal GPU
 that meets risc0's requirement (`MTLArgumentBuffersTier::Tier2`), so the Metal
-lane cannot run there. CI on hosted runners therefore validates what it can: the
-patched stack **builds** (Metal shaders included) and the **CPU lane proves and
-verifies**. The Metal lane is validated on **real Apple Silicon hardware** — the
+lane cannot run there. CI on hosted runners therefore validates what it can:
+
+- a **patch-consistency** job (Linux) downloads pristine `risc0-circuit-rv32im`
+  4.0.4 from crates.io, applies `patches/`, and asserts a full-tree match with
+  `vendor/` — so the vendored crate can never drift from "pristine + patch";
+- the patched stack **builds** (Metal shaders included) and the **CPU lane
+  proves and verifies**;
+- the **runtime GPU probe falls back to the CPU lane** on the GPU-less runner
+  (the default, no-env invocation reports `lane=cpu` and still verifies) — so
+  the graceful fallback is regression-tested, not just claimed.
+
+The Metal lane itself is validated on **real Apple Silicon hardware** — the
 controlled benchmark and the `metal-observed` + `RECEIPT VERIFIED` evidence were
 produced on an M4 Max and are committed (see RESULT.md, bench/, and the
 r0-metal-doctor evidence). A second, opt-in CI job runs the full Metal
-validation on a self-hosted arm64 macOS runner (set repo variable
-`APPLE_SILICON_SELF_HOSTED=true`).
+validation — the 9-test M0 smoke suite plus both workloads — on a self-hosted
+arm64 macOS runner (set repo variable `APPLE_SILICON_SELF_HOSTED=true`).
 
 ## How it works
 
@@ -87,7 +101,12 @@ shipped, tested, and unreachable in stock builds. The circuit traits
   Apple Silicon Metal buffers are `StorageModeShared` unified memory, so this is
   zero-copy: the CPU kernels write the same bytes the GPU reads.
 - `segment_prover()` auto-selects the lane on `macos`/`aarch64` (the branch
-  RISC Zero left commented out in the stock source).
+  RISC Zero left commented out in the stock source), gated by a runtime probe
+  for a Tier-2-argument-buffer Metal GPU. No suitable GPU → CPU lane, with a
+  one-time stderr notice; never a panic.
+- Every hand-off of a Metal buffer to the CPU C++ kernels asserts the buffer is
+  a base (offset-0) allocation, so the zero-copy pointer aliasing is checked,
+  not just assumed.
 - The hash suite is `Poseidon2HashSuite` — identical to CPU proving and to the
   verifier, which is why receipts verify unchanged.
 
@@ -101,17 +120,24 @@ still run on CPU. See RESULT.md for the precise GPU/CPU split table.
 | [vendor/risc0-circuit-rv32im/](vendor/risc0-circuit-rv32im/) | Patched circuit crate (Apache-2.0, modification notices per §4(b)) |
 | [patches/](patches/) | The same change as a reviewable diff against pristine 4.0.4 |
 | [e2e/](e2e/) | Working example host + guest + in-process A/B benchmark |
-| [m0-metalhal-smoke/](m0-metalhal-smoke/) | Standalone proof that risc0-zkp's Metal HAL computes bit-identically to CPU (NTT, bit-reverse, eltwise) |
-| [bench/](bench/) | Raw benchmark CSVs from the controlled runs |
+| [m0-metalhal-smoke/](m0-metalhal-smoke/) | Standalone proof that risc0-zkp's Metal HAL computes bit-identically to CPU — 9 tests: NTT expand/evaluate, NTT interpolate, forward→inverse round trip, bit-reverse, eltwise, zk-shift, FRI fold, Poseidon2 hash_rows, Poseidon2 hash_fold |
+| [bench/](bench/) | Raw benchmark CSVs from the controlled runs (`hello-*`, `busy-*`) |
 | [RESULT.md](RESULT.md) | Measured results, scope, limitations, honest recommendation |
 
 ## Status, honestly
 
-Experimental. Correct on everything tested (every receipt verifies; the M0
-smoke test shows the Metal HAL bit-identical to CPU on the generic ops), and
-faster on the measured workload — but pinned to risc0-zkvm 3.0.5 / circuit
-4.0.4, benchmarked on one machine and one small guest, and distributed as a
-`[patch]` rather than upstream. Related upstream issue:
+Correct on everything tested and hardened for real use, within its pinned
+scope. Every receipt verifies against the stock verifier; the M0 smoke suite
+shows all nine generic Metal ops bit-identical to the CPU; the lane probes for
+a real GPU and falls back to CPU instead of panicking; the buffer-pointer
+aliasing the hybrid relies on is asserted, not assumed; the example compiles
+with `disable-dev-mode`, so a stray `RISC0_DEV_MODE=1` fails closed instead of
+faking a proof; and CI checks that the vendored crate is exactly pristine 4.0.4
+plus the committed patch. The remaining caveats are scope, not soundness: it is
+pinned to **risc0-zkvm 3.0.5 / risc0-zkp 3.0.4 (exact) / circuit 4.0.4**,
+benchmarked on one machine across two workloads, and distributed as a vendored
+`[patch]` rather than an upstream path (a version bump means re-vendoring and
+re-auditing the pointer invariants). Related upstream issue:
 [risc0/risc0#3753](https://github.com/risc0/risc0/issues/3753).
 
 ## License

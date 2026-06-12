@@ -1,3 +1,7 @@
+# MODIFIED from the RISC Zero Rust starter template (2026-06-11): adds the
+# direct (patched) circuit-crate dependency for lane reporting and enables the
+# disable-dev-mode feature. See repository NOTICE.
+
 [package]
 name = "host"
 version = "0.1.0"
@@ -5,9 +9,15 @@ edition = "2021"
 
 [dependencies]
 methods = { path = "../methods" }
-# Just the standard prove feature. On Apple Silicon the patched circuit crate
-# auto-selects the Metal hybrid lane — no metal feature, no manual wiring.
-risc0-zkvm = { version = "=3.0.5", features = ["prove"] }
+# Just the standard prove feature, with dev mode compiled out so a stray
+# RISC0_DEV_MODE=1 can never produce fake receipts or fake benchmark rows.
+# On Apple Silicon the patched circuit crate auto-selects the Metal hybrid
+# lane behind a runtime GPU probe — no metal feature, no manual wiring.
+risc0-zkvm = { version = "=3.0.5", features = ["prove", "disable-dev-mode"] }
+# Direct dependency on the (patched) circuit crate so lane reporting calls
+# prove::metal_lane_selected() — the same function segment_prover() uses —
+# instead of re-deriving the lane from the environment.
+risc0-circuit-rv32im = { version = "=4.0.4", features = ["prove"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = "1.0"
 libc = "0.2"
