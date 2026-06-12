@@ -7,3 +7,6 @@ edition = "2021"
 
 [dependencies]
 risc0-zkvm = { version = "=3.0.5", default-features = false, features = ['std'] }
+# Stock crates.io sha2 (exact pin), deliberately NOT the risc0-accelerated
+# fork: the `hash` guest measures real rv32im execution of a real dependency.
+sha2 = { version = "=0.10.9", default-features = false }

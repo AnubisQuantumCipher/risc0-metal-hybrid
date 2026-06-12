@@ -5,13 +5,18 @@
 `risc0-metal-hybrid` is a vendored, exactly-pinned patch to
 `risc0-circuit-rv32im` 4.0.4 that adds a hybrid Metal proving lane. It targets
 one toolchain: **risc0-zkvm 3.0.5 / risc0-zkp 3.0.4 / rv32im circuit 4.0.4**.
-Only that pinned combination is supported; a version bump means re-vendoring and
-re-auditing (see the re-audit checklist in
-[`vendor/risc0-circuit-rv32im/Cargo.toml`](vendor/risc0-circuit-rv32im/Cargo.toml)).
+Only that pinned combination is supported; a version bump means re-vendoring
+and completing the re-audit checklist in [REAUDIT.md](REAUDIT.md) — no
+exceptions, including automated dependency-bump bots.
 
-This is experimental software. It is correct on everything tested — every
-receipt verifies against the **stock** RISC Zero verifier — but it is not a
-production-hardened system.
+Within that pinned scope the lane is hardened and validated: every receipt
+verifies against the **stock** RISC Zero verifier; the generic Metal ops are
+regression-tested bit-identical to CPU; the offset-0 buffer invariant is
+runtime-asserted (with a negative test); dev mode is compiled out; malformed
+workload parameters fail closed; and `scripts/validate.sh` reproduces the full
+validation suite as a single evidence bundle. Outside that scope — any other
+risc0 version, recursion/lift/join paths, external `r0vm` proving — no claim
+is made.
 
 ## What counts as a security issue here
 

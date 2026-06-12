@@ -14,6 +14,8 @@
 
 // ADDED in this modified copy of risc0-circuit-rv32im 4.0.4 (2026-06-11):
 // new file, adapted from src/prove/hal/cpu.rs. See repository NOTICE.
+// MODIFIED (2026-06-12): negative test that `checked_base_ptr` rejects
+// sliced (offset != 0) Metal buffers.
 
 //! Hybrid Metal circuit HAL.
 //!
@@ -284,4 +286,48 @@ pub fn segment_prover() -> Result<Box<dyn SegmentProver>> {
     // same suite the CPU prover and the verifier use.
     let hal_factory = || (Rc::new(MetalHalPoseidon2::new()), Rc::new(MetalCircuitHal));
     Ok(Box::new(SegmentProverImpl::new(hal_factory)))
+}
+
+#[cfg(test)]
+mod tests {
+    use risc0_zkp::hal::Hal as _;
+
+    use super::*;
+
+    /// Negative test for safety invariant 1 (offset-0 buffers, see the module
+    /// docs): `checked_base_ptr` must accept a base allocation and must reject
+    /// a sliced (offset != 0) view loudly, because `BufferImpl::as_ptr()` in
+    /// the pinned risc0-zkp ignores the slice offset and a CPU circuit kernel
+    /// handed a sliced buffer would silently read and write the wrong region.
+    ///
+    /// Skips (with a notice) on hosts without a Tier-2 Metal GPU, where the
+    /// HAL cannot be constructed at all.
+    #[test]
+    fn checked_base_ptr_rejects_sliced_buffer() {
+        if !crate::prove::metal_runtime_available() {
+            eprintln!("SKIP checked_base_ptr_rejects_sliced_buffer: no Tier-2 Metal device");
+            return;
+        }
+        let hal = MetalHalPoseidon2::new();
+        let buf: MetalBuffer<Val> = hal.alloc_elem("base", 16);
+
+        // A base (offset-0) allocation passes the check.
+        let base = checked_base_ptr(&buf);
+        assert!(!base.is_null());
+
+        // A sliced view must trip the assertion, not return a wrong pointer.
+        let sliced = buf.slice(8, 8);
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| checked_base_ptr(&sliced)));
+        let err = result.expect_err("checked_base_ptr accepted a sliced Metal buffer");
+        let msg = err
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| err.downcast_ref::<&str>().map(|s| s.to_string()))
+            .unwrap_or_default();
+        assert!(
+            msg.contains("sliced view"),
+            "sliced buffer was rejected, but with an unexpected message: {msg}"
+        );
+    }
 }

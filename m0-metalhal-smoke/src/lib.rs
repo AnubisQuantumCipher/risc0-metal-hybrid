@@ -24,7 +24,9 @@ mod tests {
 
     fn sample(n: usize) -> Vec<Val> {
         // deterministic, non-trivial input
-        (0..n).map(|i| Val::from_u64(((i * 2654435761) % 2013265727) as u64)).collect()
+        (0..n)
+            .map(|i| Val::from_u64(((i * 2654435761) % 2013265727) as u64))
+            .collect()
     }
 
     /// Deterministic ExtElem sample, built from the scalar sample.
@@ -65,7 +67,10 @@ mod tests {
         let metal_out = mb.to_vec();
 
         assert_eq!(cpu_out, metal_out, "Metal bit_reverse diverged from CPU");
-        assert_ne!(cpu_out, data, "bit_reverse was a no-op — test is not exercising the kernel");
+        assert_ne!(
+            cpu_out, data,
+            "bit_reverse was a no-op — test is not exercising the kernel"
+        );
     }
 
     /// NTT expand-and-evaluate must match CPU. (The interpolate kernel also
@@ -96,7 +101,10 @@ mod tests {
         let metal_eval = m_out.to_vec();
 
         assert_eq!(cpu_eval.len(), metal_eval.len());
-        assert_eq!(cpu_eval, metal_eval, "Metal NTT evaluation diverged from CPU");
+        assert_eq!(
+            cpu_eval, metal_eval,
+            "Metal NTT evaluation diverged from CPU"
+        );
     }
 
     /// eltwise_add_elem on Metal must match CPU.
@@ -145,8 +153,14 @@ mod tests {
         metal.batch_interpolate_ntt(&mb, count);
         let metal_out = mb.to_vec();
 
-        assert_eq!(cpu_out, metal_out, "Metal interpolate NTT diverged from CPU");
-        assert_ne!(cpu_out, data, "interpolate was a no-op — test not exercising the kernel");
+        assert_eq!(
+            cpu_out, metal_out,
+            "Metal interpolate NTT diverged from CPU"
+        );
+        assert_ne!(
+            cpu_out, data,
+            "interpolate was a no-op — test not exercising the kernel"
+        );
     }
 
     /// A full expand/evaluate -> interpolate round trip must agree bit-for-bit
@@ -200,7 +214,10 @@ mod tests {
         let metal_out = mb.to_vec();
 
         assert_eq!(cpu_out, metal_out, "Metal zk_shift diverged from CPU");
-        assert_ne!(cpu_out, data, "zk_shift was a no-op — test not exercising the kernel");
+        assert_ne!(
+            cpu_out, data,
+            "zk_shift was a no-op — test not exercising the kernel"
+        );
     }
 
     /// FRI fold must match CPU on identical input + mixing element.
@@ -248,7 +265,10 @@ mod tests {
             metal.hash_rows(&mo, &mm);
             let metal_out = mo.to_vec();
 
-            assert_eq!(cpu_out, metal_out, "Metal hash_rows diverged from CPU at {rows}x{cols}");
+            assert_eq!(
+                cpu_out, metal_out,
+                "Metal hash_rows diverged from CPU at {rows}x{cols}"
+            );
         }
     }
 
