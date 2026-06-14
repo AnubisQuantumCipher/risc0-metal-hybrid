@@ -66,6 +66,25 @@ jobs:
             || { echo "FAIL: vendor/ is not exactly pristine 4.0.4 + patches/"; exit 1; }
           echo "OK: vendor/ == pristine 4.0.4 + patches/ (full-tree)"
 
+  results-schema:
+    # Multi-machine contribution guard. Every results/<chip>.json must validate
+    # against r0mh-results-v1 AND the zero-fabrication invariants the schema
+    # cannot express: a placeholder carries NO timings, a 'measured' row's
+    # receipts are all verified and its reported speedup matches its own medians,
+    # and chip_key matches the filename. This is how a fabricated or
+    # foreign-chip-with-timings row fails in CI rather than getting merged.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1 (Node 24)
+        with:
+          persist-credentials: false
+      - name: Validate results/*.json against schema + invariants
+        run: |
+          python3 -m pip install --quiet --break-system-packages 'jsonschema>=4' \
+            || python3 -m pip install --quiet 'jsonschema>=4'
+          python3 scripts/validate-results.py
+
   build-and-cpu-lane:
     # Hosted Apple Silicon runner: builds the patched stack, proves the CPU
     # lane, and confirms the runtime probe falls back to CPU on the GPU-less

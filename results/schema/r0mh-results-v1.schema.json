@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/AnubisQuantumCipher/risc0-metal-hybrid/results/schema/r0mh-results-v1.schema.json",
+  "title": "r0mh-results-v1",
+  "description": "One machine's risc0-metal-hybrid benchmark contribution. Every measured timing MUST trace to a captured evidence bundle on the contributing machine; a machine that was not run carries status 'not_measured' and no timings.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "chip", "chip_key", "status", "hardware", "os"],
+  "properties": {
+    "schema_version": { "const": "r0mh-results-v1" },
+    "chip": { "type": "string", "description": "Human chip name as reported by `sysctl -n machdep.cpu.brand_string`, e.g. 'Apple M4 Max'." },
+    "chip_key": { "type": "string", "pattern": "^[a-z0-9-]+$", "description": "Filename-safe key, e.g. 'apple-m4-max'. Matches the results/<chip_key>.json filename." },
+    "status": { "enum": ["measured", "not_measured"], "description": "'measured' requires real timings + an evidence bundle; 'not_measured' is a placeholder for hardware no one has run yet." },
+    "not_measured_reason": { "type": "string", "description": "Required when status is 'not_measured', e.g. 'awaiting hardware — not measured'." },
+    "hardware": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpu_cores", "gpu_cores", "ram_bytes"],
+      "properties": {
+        "cpu_cores": { "type": "integer", "minimum": 0, "description": "Total CPU cores (sysctl hw.ncpu)." },
+        "cpu_performance_cores": { "type": "integer", "minimum": 0 },
+        "cpu_efficiency_cores": { "type": "integer", "minimum": 0 },
+        "gpu_cores": { "type": "integer", "minimum": 0, "description": "GPU core count for this chip variant. May be 0 if unknown for a placeholder." },
+        "ram_bytes": { "type": "integer", "minimum": 0, "description": "Unified memory in bytes (sysctl hw.memsize)." }
+      }
+    },
+    "os": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "description": "e.g. 'macOS'." },
+        "version": { "type": "string", "description": "e.g. '26.0'." },
+        "build": { "type": "string", "description": "e.g. '25A353'." },
+        "metal_argument_buffers_tier": { "type": "string", "description": "'Tier2' is risc0-zkp's requirement for the Metal HAL; the lane probe asserts it." }
+      }
+    },
+    "risc0": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "zkvm": { "type": "string", "description": "Pinned risc0-zkvm version, e.g. '=3.0.5'." },
+        "zkp": { "type": "string", "description": "Pinned risc0-zkp version, e.g. '3.0.4'." },
+        "circuit_rv32im": { "type": "string", "description": "Pinned risc0-circuit-rv32im version, e.g. '=4.0.4' (vendored + patch)." },
+        "r0vm": { "type": "string" },
+        "cargo_risczero": { "type": "string" }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rustc": { "type": "string" },
+        "cargo": { "type": "string" }
+      }
+    },
+    "bench_runs": { "type": "integer", "minimum": 1, "description": "Measured runs per lane (excludes the warm-up). The published M4 Max protocol used 8." },
+    "workloads": {
+      "type": "array",
+      "description": "One entry per workload, each carrying both lanes. Empty when status is 'not_measured'.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "metal", "cpu"],
+        "properties": {
+          "name": { "type": "string", "description": "Workload id: hello | busy | hash | ecdsa | shaheavy | mempress | multiseg." },
+          "segments": { "type": "integer", "minimum": 1, "description": "Segment count of the proof (structural property of the workload at the pinned knobs)." },
+          "knobs": { "type": "object", "description": "Workload parameters in effect, e.g. {\"R0_HASH_ITERS\": \"512\"}." },
+          "metal": { "$ref": "#/$defs/lane_result" },
+          "cpu": { "$ref": "#/$defs/lane_result" },
+          "speedup": { "type": "number", "description": "cpu.median_ms / metal.median_ms, reported exactly as measured (may be near 1.0 for circuit-heavy guests)." }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Pointer to the captured evidence bundle that backs every timing in this file.",
+      "properties": {
+        "bundle": { "type": "string", "description": "Relative path or release-asset name of the evidence bundle, e.g. 'evidence/20260614T...Z'." },
+        "evidence_json_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$", "description": "sha256 of the bundle's evidence.json." },
+        "verdict": { "enum": ["PASS", "FAIL"] }
+      }
+    },
+    "measured_at_utc": { "type": "string", "description": "UTC timestamp of the run, e.g. '20260614T...Z'." },
+    "notes": { "type": "string" }
+  },
+  "$defs": {
+    "lane_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["median_ms", "runs", "receipt_verified"],
+      "properties": {
+        "median_ms": { "type": "number", "minimum": 0, "description": "Median of `runs` serial proving runs (run_ms), from the captured CSV." },
+        "runs": { "type": "integer", "minimum": 1 },
+        "receipt_verified": { "const": true, "description": "MUST be true. A run whose receipt did not verify is not a result — it is a failure to fix. The harness verifies + asserts the journal on every run." },
+        "peak_rss_mb": { "type": "number", "minimum": 0 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "measured" } } },
+      "then": {
+        "required": ["risc0", "bench_runs", "workloads", "evidence", "measured_at_utc"],
+        "properties": { "workloads": { "minItems": 1 } }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "not_measured" } } },
+      "then": {
+        "required": ["not_measured_reason"],
+        "properties": { "workloads": { "maxItems": 0 } }
+      }
+    }
+  ]
+}
