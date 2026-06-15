@@ -1,0 +1,94 @@
+{
+  "schema_version": "r0mh-results-v1",
+  "chip": "Apple M4 Max",
+  "chip_key": "apple-m4-max",
+  "status": "measured",
+  "hardware": {
+    "cpu_cores": 16,
+    "cpu_performance_cores": 12,
+    "cpu_efficiency_cores": 4,
+    "gpu_cores": 40,
+    "ram_bytes": 51539607552
+  },
+  "os": {
+    "name": "macOS",
+    "version": "26.0",
+    "build": "25A353",
+    "metal_argument_buffers_tier": "Tier2"
+  },
+  "risc0": {
+    "zkvm": "=3.0.5",
+    "zkp": "3.0.4",
+    "circuit_rv32im": "=4.0.4",
+    "r0vm": "risc0-r0vm 3.0.5",
+    "cargo_risczero": "cargo-risczero 3.0.5"
+  },
+  "toolchain": {
+    "rustc": "rustc 1.97.0-nightly (82bee9650 2026-05-09)",
+    "cargo": "cargo 1.97.0-nightly (a343accce 2026-05-08)"
+  },
+  "bench_runs": 8,
+  "workloads": [
+    {
+      "name": "hello",
+      "segments": 1,
+      "knobs": {},
+      "metal": { "median_ms": 865.0, "runs": 8, "receipt_verified": true, "peak_rss_mb": 369.2 },
+      "cpu": { "median_ms": 1359.3, "runs": 8, "receipt_verified": true, "peak_rss_mb": 347.4 },
+      "speedup": 1.571
+    },
+    {
+      "name": "hash",
+      "knobs": { "R0_HASH_ITERS": "512" },
+      "metal": { "median_ms": 67265.3, "runs": 8, "receipt_verified": true, "peak_rss_mb": 8116.0 },
+      "cpu": { "median_ms": 116630.7, "runs": 8, "receipt_verified": true, "peak_rss_mb": 13323.0 },
+      "speedup": 1.734
+    },
+    {
+      "name": "busy",
+      "knobs": { "R0_BUSY_ITERS": "1000000" },
+      "metal": { "median_ms": 159078.0, "runs": 8, "receipt_verified": true, "peak_rss_mb": 8419.0 },
+      "cpu": { "median_ms": 281009.7, "runs": 8, "receipt_verified": true, "peak_rss_mb": 10687.5 },
+      "speedup": 1.766
+    },
+    {
+      "name": "multiseg",
+      "segments": 9,
+      "knobs": { "R0_MULTISEG_ITERS": "1500000" },
+      "metal": { "median_ms": 226393.7, "runs": 5, "receipt_verified": true, "peak_rss_mb": 8506.7 },
+      "cpu": { "median_ms": 391705.0, "runs": 5, "receipt_verified": true, "peak_rss_mb": 10602.5 },
+      "speedup": 1.730
+    },
+    {
+      "name": "mempress",
+      "segments": 7,
+      "knobs": { "R0_MEMPRESS_WORDS": "256000" },
+      "metal": { "median_ms": 176109.5, "runs": 5, "receipt_verified": true, "peak_rss_mb": 8314.1 },
+      "cpu": { "median_ms": 305050.1, "runs": 5, "receipt_verified": true, "peak_rss_mb": 10545.0 },
+      "speedup": 1.732
+    },
+    {
+      "name": "shaheavy",
+      "segments": 5,
+      "knobs": { "R0_SHAHEAVY_KB": "16", "R0_SHAHEAVY_ROUNDS": "4" },
+      "metal": { "median_ms": 113482.7, "runs": 5, "receipt_verified": true, "peak_rss_mb": 8405.8 },
+      "cpu": { "median_ms": 195430.3, "runs": 5, "receipt_verified": true, "peak_rss_mb": 13313.5 },
+      "speedup": 1.722
+    },
+    {
+      "name": "ecdsa",
+      "segments": 6,
+      "knobs": { "R0_ECDSA_SIGS": "1" },
+      "metal": { "median_ms": 151650.0, "runs": 5, "receipt_verified": true, "peak_rss_mb": 7808.4 },
+      "cpu": { "median_ms": 261376.3, "runs": 5, "receipt_verified": true, "peak_rss_mb": 10196.4 },
+      "speedup": 1.724
+    }
+  ],
+  "evidence": {
+    "bundle": "evidence/20260614T211748Z",
+    "evidence_json_sha256": "29fe086744af712942da031246170883682897a54185ed3858325b265d762a4e",
+    "verdict": "PASS"
+  },
+  "measured_at_utc": "20260614T211748Z",
+  "notes": "Phase 0 reproduction of the v0.2.0 protocol (1 warm-up + 8 serial runs/lane, receipt verified + journal asserted each run, CPU lane via R0_DISABLE_METAL=1). Reproduced speedups (1.571x/1.734x/1.766x for hello/hash/busy) vs the published v0.2.0 medians (1.70x/1.63x/1.70x): hash and busy came in slightly higher, hello lower (the ~1s single-segment proof is the most variance-sensitive; its CPU lane ran faster this session). All within run-to-run variance on a shared machine; the structural story (eval_check CPU floor bounds the speedup) is unchanged. The multiseg/mempress/shaheavy/ecdsa adopter rows are from a Phase 2 bundle, evidence/adopter-20260615T102417Z (summary.json sha256 ec7ff1f8ab3759a36e123afedfdaed8552050d9092c35cd976382c9faec87f08), 1 warm-up + 5 serial runs/lane (fewer than 8 because each run is 2-4 min; metal variance was ~0.2%). All four cluster at 1.722x-1.732x; their measured circuit floor is ~87% (eval_check ~83%) with ~13% generic-on-GPU, i.e. the speedup holds across ECDSA-verify, SHA-256-heavy, memory-pressure, and long multi-segment proofs and does not erode toward 1x at these sizes."
+}

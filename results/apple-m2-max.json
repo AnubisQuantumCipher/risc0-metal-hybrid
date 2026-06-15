@@ -1,0 +1,9 @@
+{
+  "schema_version": "r0mh-results-v1",
+  "chip": "Apple M2 Max",
+  "chip_key": "apple-m2-max",
+  "status": "not_measured",
+  "not_measured_reason": "awaiting hardware — not measured. Run scripts/validate.sh --require-metal --full on this chip and submit per CONTRIBUTING-BENCHMARKS.md.",
+  "hardware": { "cpu_cores": 0, "gpu_cores": 0, "ram_bytes": 0 },
+  "os": { "name": "macOS", "version": "unknown" }
+}
