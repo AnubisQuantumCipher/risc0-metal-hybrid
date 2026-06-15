@@ -1,6 +1,7 @@
 # FINAL REPORT — hardening & upstream-readiness
 
-Branch `feat/hardening-and-upstream-readiness`. Autonomous mission to take
+Branch `feat/hardening-and-upstream-readiness` — **operator-reviewed and merged to
+master via PR #4** (CI green; CodeRabbit pass). Autonomous mission to take
 `risc0-metal-hybrid` from a real-but-narrow experimental patch to battle-tested,
 reproducible, and upstream-ready — on the author's Apple **M4 Max** only. Every
 number here traces to a captured evidence bundle on this machine; where a thing
@@ -27,7 +28,7 @@ no guard was weakened; no number was invented.
 | 2 — Adopter workloads | four real guests (`multiseg`/`mempress`/`shaheavy`/`ecdsa`), both lanes, receipts verified, per-workload floor profiled | `evidence/adopter-<UTC>` |
 | 3 — Upstream artifacts (STAGED) | RFC + stable-HAL-boundary + minimal repro + review checklist; 5 issues verified firsthand | `_private-staging/upstream/` |
 | 4 — Re-audit & one-liner | full suite re-run green; frozen-pins guard; clean-clone `reproduce.sh`; new fail-closed checks | `evidence/`, `scripts/` |
-| 5 — Final honesty pass | this report; no claim broadened; ceiling language intact; PR opened | — |
+| 5 — Final honesty pass | this report; no claim broadened; ceiling language intact; merged via PR #4 | — |
 
 ## What was measured (real, M4 Max)
 
