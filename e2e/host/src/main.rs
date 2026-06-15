@@ -15,26 +15,36 @@
 //! stray `RISC0_DEV_MODE=1` cannot produce fake receipts or benchmark rows.
 //!
 //! Usage:
-//!   host [hello|busy|hash]           -> prove once, verify, print result
-//!   host lane                        -> print the lane that WOULD be selected
-//!                                       (capability probe, no proving)
-//!   host bench N [hello|busy|hash]   -> prove N times in one process, CSV out
-//!   host profile [hello|busy|hash]   -> prove once, print per-phase wall-time
-//!                                       attribution
+//!   host [WORKLOAD]                   -> prove once, verify, print result
+//!   host lane                         -> print the lane that WOULD be selected
+//!                                        (capability probe, no proving)
+//!   host bench N [WORKLOAD]           -> prove N times in one process, CSV out
+//!   host profile [WORKLOAD]           -> prove once, print per-phase wall-time
+//!                                        attribution
 //!
-//! Workloads:
-//!   hello  one 32k-cycle segment; the guest echoes the input u32
-//!   busy   multi-segment; the guest runs R0_BUSY_ITERS (default 1,000,000)
-//!          iterations of a data-dependent multiply-add loop
-//!   hash   real-dependency guest; iterated SHA-256 chain via the stock,
-//!          exact-pinned `sha2` crate (R0_HASH_ITERS applications, default
-//!          512); the host asserts the committed 32-byte digest against the
-//!          same chain computed with the same pinned `sha2` on the host
+//! Workloads (the host asserts the committed journal against an independent
+//! host-side mirror for every one):
+//!   hello     one 32k-cycle segment; the guest echoes the input u32
+//!   busy      multi-segment; R0_BUSY_ITERS (default 1,000,000) of a
+//!             data-dependent multiply-add loop
+//!   hash      real-dep iterated SHA-256 chain via the stock, exact-pinned
+//!             `sha2` crate (R0_HASH_ITERS applications, default 512)
+//!   multiseg  a long multi-segment proof: the `busy` recurrence driven to many
+//!             more segments (R0_MULTISEG_ITERS, default 1,500,000)
+//!   mempress  memory-pressure: allocate + double-pass-reduce R0_MEMPRESS_WORDS
+//!             u32s (default 256,000 ~= 1 MiB working set)
+//!   shaheavy  SHA-256-heavy: hash a R0_SHAHEAVY_KB-KB buffer (default 16)
+//!             R0_SHAHEAVY_ROUNDS times (default 4) via the stock `sha2`
+//!   ecdsa     real-dep secp256k1 verify via the stock `k256` crate
+//!             (R0_ECDSA_SIGS verifications, default 1)
 
 use std::rc::Rc;
 use std::time::Instant;
 
-use methods::{BUSY_ELF, BUSY_ID, HASH_ELF, HASH_ID, HELLO_ELF, HELLO_ID};
+use methods::{
+    BUSY_ELF, BUSY_ID, ECDSA_ELF, ECDSA_ID, HASH_ELF, HASH_ID, HELLO_ELF, HELLO_ID, MEMPRESS_ELF,
+    MEMPRESS_ID, MULTISEG_ELF, MULTISEG_ID, SHAHEAVY_ELF, SHAHEAVY_ID,
+};
 use risc0_zkvm::{get_prover_server, ExecutorEnv, InnerReceipt, ProverOpts, ProverServer};
 use sha2::{Digest, Sha256};
 
@@ -78,6 +88,53 @@ fn hash_chain(seed: u32, iters: u32) -> [u8; 32] {
 
 fn hex32(digest: &[u8; 32]) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Host-side mirror of the mempress guest: fill a `words`-long LCG stream, then
+/// reduce forward+reverse so every element is touched. Same u32 wrapping ops as
+/// the guest.
+fn mempress_acc(words: u32) -> u32 {
+    let n = words as usize;
+    let mut v: Vec<u32> = Vec::with_capacity(n);
+    let mut x: u32 = 0x1234_5678;
+    let mut i: u32 = 0;
+    while i < words {
+        x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223 ^ i);
+        v.push(x);
+        i += 1;
+    }
+    let mut acc: u32 = 0;
+    i = 0;
+    while i < words {
+        let fwd = v[i as usize];
+        let rev = v[(words - 1 - i) as usize];
+        acc = acc.wrapping_add(fwd).rotate_left(1) ^ rev;
+        i += 1;
+    }
+    acc
+}
+
+/// Host-side mirror of the shaheavy guest: hash a `kb`-KB LCG-filled buffer
+/// `rounds` times, folding the digest back into the head each round. Same
+/// pinned `sha2` as the guest.
+fn shaheavy_chain(kb: u32, rounds: u32) -> [u8; 32] {
+    let n = (kb as usize) * 1024;
+    let mut buf = vec![0u8; n];
+    let mut x: u32 = 0xA5A5_5A5A;
+    for b in buf.iter_mut() {
+        x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        *b = (x >> 24) as u8;
+    }
+    let mut digest = [0u8; 32];
+    let mut r: u32 = 0;
+    while r < rounds {
+        digest = Sha256::digest(&buf).into();
+        for i in 0..32 {
+            buf[i] ^= digest[i];
+        }
+        r += 1;
+    }
+    digest
 }
 
 /// Read a u32 workload parameter from the environment, failing closed: a
@@ -139,6 +196,58 @@ fn hash_workload() -> Workload {
     }
 }
 
+fn multiseg_workload() -> Workload {
+    // A deliberately long multi-segment proof: same recurrence as `busy`, driven
+    // to many more 1M-cycle segments by a larger default iteration count.
+    let iters = env_u32("R0_MULTISEG_ITERS", 1_500_000, 1);
+    Workload {
+        name: "multiseg",
+        elf: MULTISEG_ELF,
+        image_id: MULTISEG_ID,
+        inputs: vec![iters],
+        expected: Expected::Word(busy_acc(iters)),
+    }
+}
+
+fn mempress_workload() -> Workload {
+    // Working-set size in u32 words; the guest allocates and double-passes it.
+    let words = env_u32("R0_MEMPRESS_WORDS", 256_000, 1);
+    Workload {
+        name: "mempress",
+        elf: MEMPRESS_ELF,
+        image_id: MEMPRESS_ID,
+        inputs: vec![words],
+        expected: Expected::Word(mempress_acc(words)),
+    }
+}
+
+fn shaheavy_workload() -> Workload {
+    // Buffer size (KB) and round count; SHA-256-compression-bound.
+    let kb = env_u32("R0_SHAHEAVY_KB", 16, 1);
+    let rounds = env_u32("R0_SHAHEAVY_ROUNDS", 4, 1);
+    Workload {
+        name: "shaheavy",
+        elf: SHAHEAVY_ELF,
+        image_id: SHAHEAVY_ID,
+        inputs: vec![kb, rounds],
+        expected: Expected::Digest(shaheavy_chain(kb, rounds)),
+    }
+}
+
+fn ecdsa_workload() -> Workload {
+    // Number of secp256k1 verifications; the guest commits the count of
+    // successful ones, so the host's expected count is exactly `sigs` (a wrong
+    // or invalid embedded vector would commit fewer and fail this assertion).
+    let sigs = env_u32("R0_ECDSA_SIGS", 1, 1);
+    Workload {
+        name: "ecdsa",
+        elf: ECDSA_ELF,
+        image_id: ECDSA_ID,
+        inputs: vec![sigs],
+        expected: Expected::Word(sigs),
+    }
+}
+
 fn peak_rss_bytes() -> u64 {
     // ru_maxrss is bytes on macOS, kilobytes on Linux.
     let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
@@ -192,7 +301,9 @@ fn prove_once(prover: &Rc<dyn ProverServer>, w: &Workload) -> (String, usize) {
     // count tracks the pinned sha2 crate's cycle cost, and its correctness
     // check is the journal digest equality above.
     match w.name {
-        "busy" => assert!(segments > 1, "busy workload proved a single segment"),
+        "busy" | "multiseg" => {
+            assert!(segments > 1, "{} workload proved a single segment", w.name)
+        }
         "hello" => assert_eq!(segments, 1, "hello workload spanned multiple segments"),
         _ => {}
     }
@@ -214,9 +325,16 @@ fn workload_from(arg: Option<&str>) -> Workload {
     match arg {
         Some("busy") => busy_workload(),
         Some("hash") => hash_workload(),
+        Some("multiseg") => multiseg_workload(),
+        Some("mempress") => mempress_workload(),
+        Some("shaheavy") => shaheavy_workload(),
+        Some("ecdsa") => ecdsa_workload(),
         Some("hello") | None => hello_workload(),
         Some(other) => {
-            eprintln!("unknown workload '{other}' (expected 'hello', 'busy', or 'hash')");
+            eprintln!(
+                "unknown workload '{other}' (expected 'hello', 'busy', 'hash', \
+                 'multiseg', 'mempress', 'shaheavy', or 'ecdsa')"
+            );
             std::process::exit(2);
         }
     }
@@ -390,6 +508,34 @@ mod tests {
         assert_eq!(
             hex32(&hash_chain(0x5eed_5eed, 512)),
             "3208ee3b37852d1cfb2d0a648617de8015b1e3e1a7e264a88d20be899922630b"
+        );
+    }
+
+    #[test]
+    fn mempress_acc_matches_reference_vectors() {
+        // Independently computed in Python (u32 wrapping LCG fill + forward/
+        // reverse double-pass reduction), not derived from the code under test.
+        assert_eq!(mempress_acc(0), 0x0000_0000);
+        assert_eq!(mempress_acc(1), 0x9fc5_6999);
+        assert_eq!(mempress_acc(2), 0x9c8f_fa96);
+        assert_eq!(mempress_acc(1_000), 0xbf41_0702);
+    }
+
+    #[test]
+    fn shaheavy_chain_matches_reference_vectors() {
+        // Independently computed in Python (hashlib SHA-256 over the same LCG
+        // fill, same digest-fold each round).
+        assert_eq!(
+            hex32(&shaheavy_chain(1, 1)),
+            "ffa692fa758943f6e9bcac7b4a8f785af033f27d5399b26e596315092a7397a6"
+        );
+        assert_eq!(
+            hex32(&shaheavy_chain(1, 2)),
+            "76554f0ba25644c576531a523242bad687c9c2fb1bb16197bd833cfd36545f8c"
+        );
+        assert_eq!(
+            hex32(&shaheavy_chain(2, 3)),
+            "b32ec07ad78f3a3eb54ca206ab565b4a4bf3a87805d2412882c837c3c4bf718a"
         );
     }
 

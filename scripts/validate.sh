@@ -263,6 +263,14 @@ bad_env_fails() { # env name, workload
 }
 run_check fail-closed-busy-iters "malformed/zero R0_BUSY_ITERS exits 2" bad_env_fails R0_BUSY_ITERS busy
 run_check fail-closed-hash-iters "malformed/zero R0_HASH_ITERS exits 2" bad_env_fails R0_HASH_ITERS hash
+# Adopter-workload knobs (full-size benchmarks live in scripts/bench-adopter.sh;
+# these lock the same env_u32 fail-closed guard for the new knobs — they exit at
+# parse time, before any proving, so they are cheap).
+run_check fail-closed-multiseg-iters "malformed/zero R0_MULTISEG_ITERS exits 2" bad_env_fails R0_MULTISEG_ITERS multiseg
+run_check fail-closed-mempress-words "malformed/zero R0_MEMPRESS_WORDS exits 2" bad_env_fails R0_MEMPRESS_WORDS mempress
+run_check fail-closed-shaheavy-kb "malformed/zero R0_SHAHEAVY_KB exits 2" bad_env_fails R0_SHAHEAVY_KB shaheavy
+run_check fail-closed-shaheavy-rounds "malformed/zero R0_SHAHEAVY_ROUNDS exits 2" bad_env_fails R0_SHAHEAVY_ROUNDS shaheavy
+run_check fail-closed-ecdsa-sigs "malformed/zero R0_ECDSA_SIGS exits 2" bad_env_fails R0_ECDSA_SIGS ecdsa
 
 # ---------------------------------------------------------------------------
 # 7. Serial benchmarks + profiles (skipped in --ci)
