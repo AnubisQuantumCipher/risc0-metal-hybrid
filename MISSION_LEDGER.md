@@ -63,10 +63,10 @@ Where this mission and the live repo disagree, the repo wins.
 |---|---|---|---|
 | 0 — Reproduce & baseline | build green w/ pins; suite green; every receipt verifies; numbers recorded; deltas reported honestly | **DONE** — verdict PASS (28/0/0); build gate PASS; every receipt verified + lane observed; 8-run medians captured; deltas reported (below) | `evidence/20260614T211748Z/` (PASS, sha256 `29fe0867…`) |
 | 1 — Multi-machine infra | schema validates; M4 Max row real & reproducible; zero invented rows; guide reproduces Phase 0 | **DONE** — schema + validator (15 files pass, exit 0) + CONTRIBUTING + CI `results-schema` job; M4 Max row real (`results/apple-m4-max.json`); 14 honest `not_measured` placeholders | `results/`, `scripts/validate-results.py` |
-| 2 — Adopter workloads | each of ecdsa/sha-heavy/mempress/multiseg verifies on both lanes; real numbers; near-1× labeled as circuit floor | DESIGNED (plan below); blocked on Phase 0 finishing (no e2e rebuild mid-benchmark) | — |
-| 3 — Upstream artifacts (STAGED) | concrete; cite real issues + measured floor; no broadened claims; NOT posted | **DRAFTED** — `_private-staging/upstream/{00,01,02,03}`; all 5 issues verified firsthand; awaits measured eval_check-floor fill | `_private-staging/upstream/` |
-| 4 — Re-audit & one-liner | full suite green; one-liner from clean clone; invariants enforced by passing negative tests | TODO | — |
-| 5 — Final honesty pass | no claim broadened; ceiling language intact; FINAL_REPORT complete; PR opened | TODO | — |
+| 2 — Adopter workloads | each of ecdsa/sha-heavy/mempress/multiseg verifies on both lanes; real numbers; near-1× labeled as circuit floor | **DONE** — all four verify on both lanes; 1.730/1.732/1.722/1.724× (multiseg/mempress/shaheavy/ecdsa); floor ~87% measured per workload; recorded in `results/apple-m4-max.json` | `evidence/adopter-20260615T102417Z/` (sha256 `ec7ff1f8…`) |
+| 3 — Upstream artifacts (STAGED) | concrete; cite real issues + measured floor; no broadened claims; NOT posted | **DONE (staged)** — `_private-staging/upstream/{00,01,02,03}`; 5 issues verified firsthand; hello + adopter floors filled with measured numbers; NOT posted | `_private-staging/upstream/` |
+| 4 — Re-audit & one-liner | full suite green; one-liner from clean clone; invariants enforced by passing negative tests | **IN PROGRESS** — fail-closed checks for new knobs added; running `validate.sh --ci --require-metal` on the current tree | `evidence/<UTC>` (in flight) |
+| 5 — Final honesty pass | no claim broadened; ceiling language intact; FINAL_REPORT complete; PR opened | IN PROGRESS — FINAL_REPORT filled; PR pending | `FINAL_REPORT.md` |
 
 ## Phase 0 measured results (M4 Max, `evidence/20260614T211748Z`)
 
@@ -112,8 +112,28 @@ generic-vs-circuit-floor per workload — no new profile code.
   FIRST. Build gotcha if metallib goes missing: `cargo clean -p risc0-sys -p
   risc0-zkp --release` (field notes).*
 
-All knobs parsed via the existing fail-closed `env_u32` (malformed/zero → exit 2)
-and a `fail-closed-<wl>-iters` check added to `validate.sh`.
+All knobs parsed via the existing fail-closed `env_u32` (malformed/zero → exit 2).
+
+### Phase 2 gauge → final benchmark knobs (metal, single prove)
+
+Guests built + smoked + ecdsa de-risked (k256 0.13.4 compiles for rv32im; 1
+verify = 6 segments). Gauging the *default* knobs caught two I'd set far too
+large — exactly why we gauge before benchmarking instead of guessing numbers:
+
+| Workload | First (too big) | Re-gauged | Final knob | metal seg / time |
+|---|---|---|---|---|
+| multiseg | 1.5M → 9 seg / 250 s | (kept) | `R0_MULTISEG_ITERS=1500000` | 9 / 250 s |
+| mempress | 4M → 108 seg / **2794 s** | 256K → 7 seg / 181 s | `R0_MEMPRESS_WORDS=256000` | 7 / 181 s |
+| shaheavy | 256×256 → **runaway (~12 h, killed)** | 16×4 → 5 seg / 116 s | `R0_SHAHEAVY_KB=16 ROUNDS=4` | 5 / 116 s |
+| ecdsa | 1 verify (fixed) | — | `R0_ECDSA_SIGS=1` | 6 / 167 s |
+
+Benchmark via `scripts/bench-adopter.sh` (validate.sh protocol: lane observed
+from `RUST_LOG=debug` module paths at a reduced knob, full-knob `host bench N`
+with receipt verified + journal asserted each run on both lanes, metal profile).
+N=5 per workload (recorded; fewer than the originals' 8 because each run is
+2–4 min vs &lt;0.1–4 min, and Phase 0 variance was ~1–3%). One latent runner bug
+(`set -u` + same-statement `local`) was caught by an end-to-end smoke before the
+full run — no GPU wasted on it.
 
 ## Decision log (cont.)
 

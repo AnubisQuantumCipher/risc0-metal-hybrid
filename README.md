@@ -15,9 +15,15 @@ verified every run): **1.70×** on a single-segment guest (842.0 ms vs 1433.3 ms
 pure-CPU), **1.70×** on a circuit-heavier multi-segment guest (155.2 s vs
 264.4 s), and **1.63×** on a real-dependency guest — an iterated SHA-256 chain
 through the stock `sha2` crate (67.3 s vs 110.0 s) — so the speedup holds, not
-erodes, on harder and more realistic workloads. Full data and honest scope in
-[RESULT.md](RESULT.md). Do not generalize the numbers beyond the three measured
-workloads.
+erodes, on harder and more realistic workloads. Four further adopter workloads —
+a secp256k1 ECDSA verify (stock `k256`), a SHA-256-heavy hash, a memory-pressure
+guest, and a long multi-segment proof — were since measured at **1.72–1.73×** on
+the same machine (5 runs/lane, receipt verified each;
+[results/apple-m4-max.json](results/apple-m4-max.json)), with the same ~87 %
+circuit-kernel floor — so the speedup holds across ECDSA, heavy hashing, and
+memory pressure too, and still does not erode toward 1× at these sizes. Full data
+and honest scope in [RESULT.md](RESULT.md). Do not generalize the numbers beyond
+these measured workloads on this one machine.
 
 ## Use it (two steps)
 

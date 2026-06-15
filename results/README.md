@@ -28,8 +28,22 @@ per lane, receipt verified + journal asserted every run, CPU lane via
 
 These are a fresh reproduction of the v0.2.0 protocol; the per-run deltas vs the
 published 1.70× / 1.63× / 1.70× are run-to-run variance on a shared machine (see
-the file's `notes`). The `ecdsa` / `shaheavy` / `mempress` / `multiseg` adopter
-rows are appended from a later evidence bundle.
+the file's `notes`).
+
+**Adopter workloads** (Phase 2, `evidence/adopter-20260615T102417Z`, 1 warm-up +
+5 serial runs/lane, receipt verified each run):
+
+| Workload | Metal-hybrid | Pure CPU | Speedup | Seg | circuit floor |
+|---|---|---|---|---|---|
+| `multiseg` (long multi-segment) | 226.4 s | 391.7 s | 1.730× | 9 | 86.9% |
+| `mempress` (memory-pressure) | 176.1 s | 305.1 s | 1.732× | 7 | 86.6% |
+| `shaheavy` (SHA-256-heavy, stock `sha2`) | 113.5 s | 195.4 s | 1.722× | 5 | 86.9% |
+| `ecdsa` (secp256k1 verify, stock `k256`) | 151.7 s | 261.4 s | 1.724× | 6 | 86.8% |
+
+The hybrid holds **~1.72×** across all four — including the most circuit-heavy
+(`ecdsa`) — and the measured circuit-kernel floor (eval_check-dominated, ~83%) is
+~87% of each multi-segment proof, so the GPU accelerates only the ~13% generic
+remainder. This is the ceiling story confirmed, not broadened.
 
 ## Not measured (awaiting hardware)
 

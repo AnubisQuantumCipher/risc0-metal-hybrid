@@ -168,6 +168,34 @@ Silicon, and they should not be generalized to "≈1.7× faster proving" across 
 risc0 workloads. Recursion / lift / join paths and other guests were not
 measured. No claim is made beyond what is in the table.
 
+## Adopter workloads (Phase 2)
+
+Four workloads an adopter actually cares about, measured under the same protocol
+(1 unmeasured warm-up + 5 serial runs/lane — fewer than 8 because each run is
+2–4 min and the metal-lane variance is ~0.2 %; receipt verified + journal
+asserted every run; CPU lane via `R0_DISABLE_METAL=1`; active lane observed from
+the prover's own `RUST_LOG=debug` module paths). Evidence bundle:
+`evidence/adopter-20260615T102417Z`. Authoritative numbers:
+[results/apple-m4-max.json](results/apple-m4-max.json).
+
+| Workload | metal-hybrid | cpu | speedup | seg | circuit floor (eval_check) |
+|---|---|---|---|---|---|
+| **`multiseg`** — long multi-segment (`busy` recurrence, `R0_MULTISEG_ITERS`=1.5M) | **226.4 s** | 391.7 s | **1.730×** | 9 | 86.9 % (83.2 %) |
+| **`mempress`** — memory-pressure (256K-word working set, forward+reverse double pass) | **176.1 s** | 305.1 s | **1.732×** | 7 | 86.6 % (83.0 %) |
+| **`shaheavy`** — SHA-256-heavy (16 KB buffer × 4 rounds, stock `sha2`) | **113.5 s** | 195.4 s | **1.722×** | 5 | 86.9 % (82.4 %) |
+| **`ecdsa`** — secp256k1 verify (stock `k256`, 1 verification) | **151.7 s** | 261.4 s | **1.724×** | 6 | 86.8 % (83.0 %) |
+
+All four — including `ecdsa`, a full secp256k1 verify and the most circuit-heavy
+of the set — hold **~1.72×**. The `eval_check`-dominated CPU floor is a
+near-constant **~87 %** of each multi-segment proof, so the GPU carries only the
+~13 % generic remainder (which it does ~6.5× faster). This is the same structural
+story as `busy`/`hash` above, now confirmed across ECDSA verification, heavy
+hashing, and memory pressure: the speedup does not erode toward 1× at these
+sizes; the immovable circuit floor is what bounds it. These are stock crates
+compiled to rv32im (no risc0 precompile fork), the way a real adopter guest runs
+them. The scope caveat is unchanged — one machine, one risc0 version; measure
+your own guest with `host profile`.
+
 ## Usability — how to use it today
 
 The lane is automatic on Apple Silicon. A host project needs only the standard
@@ -219,9 +247,10 @@ RUST_LOG=debug r0-metal-doctor/target/release/r0-metal-doctor \
 
 ## Limitations and current scope
 
-- Three workload classes measured (single-segment `hello`, multi-segment
-  `busy`, real-dependency `hash`); recursion / lift / join paths are
-  unmeasured.
+- Seven workload classes measured: the three above (single-segment `hello`,
+  multi-segment `busy`, real-dependency `hash`) plus the four Phase 2 adopter
+  workloads (`multiseg`, `mempress`, `shaheavy`, `ecdsa`); recursion / lift /
+  join paths are unmeasured.
 - Circuit kernels (witgen/eval_check/accum) are CPU-bound and dominate the
   proof (75 % of `hello`, 87 % of `busy`, 87 % of `hash` — see the phase
   attribution above), so the structural ceiling (cpu prove ÷ floor) is
