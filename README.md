@@ -26,10 +26,11 @@ Apple Silicon (Tier-2 Metal). A bump is a re-audit event, not a routine update
 
 **Measured hardware.** One **Apple M4 Max** (40-core GPU, 48 GiB, macOS 26.0),
 1 warm-up + 5–8 serial runs/lane, **receipt verified + journal asserted every
-run**: **~1.57–1.77×** end-to-end vs pure CPU across **seven** rv32im workloads
+run**: **~1.64–1.75×** end-to-end vs pure CPU across **seven** rv32im workloads
 (single-segment, multi-segment, real-dependency `sha2`/`k256`, memory-pressure,
-secp256k1 ECDSA). Exact per-workload numbers, with a per-workload evidence hash,
-in [results/apple-m4-max.json](results/apple-m4-max.json); full analysis in
+secp256k1 ECDSA), re-measured on the v0.3.0 release tree. Exact per-workload
+numbers, with a per-workload evidence hash, in
+[results/apple-m4-max.json](results/apple-m4-max.json); full analysis in
 [RESULT.md](RESULT.md). **Do not generalize these numbers** beyond these
 workloads on this one machine.
 

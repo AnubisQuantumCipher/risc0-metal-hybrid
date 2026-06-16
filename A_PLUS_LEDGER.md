@@ -224,9 +224,34 @@ Negative tests confirming the new gates have teeth:
 - `verify-evidence-manifest.sh`: a one-byte change to a bundle file → exit 1,
   names the file; restore → OK.
 
-Optional full re-measure (`R0_VALIDATE_BENCH_RUNS=8 ./scripts/validate.sh
---full --require-metal`, ~2 h) was **not** run: the published per-workload
-numbers already trace to real, hash-pinned bundles (Phase 1), and re-measuring
-would only churn the numbers within run-to-run variance with no credibility gain.
-It is on the RELEASE_CHECKLIST for the operator to run before tagging v0.3.0 if
-they want fresh release-tree numbers.
+## Post-merge — v0.3.0 release prep (2026-06-16)
+
+PR #5 was merged to `master` (operator clicked merge in Claude-in-Chrome; merge
+commit `a884a158`) after **CodeRabbit caught two real bugs** in the new scripts,
+fixed + tested in `ed4ee9a` *before* the merge:
+- `verify-evidence-manifest.sh` (Critical): `set -o pipefail` made the
+  `gpg | grep "No public key"` classification unreachable → a keyless reviewer
+  got a false FAIL. Now runs gpg once and classifies from the captured rc/output.
+- `validate-results.py` (Major): a non-string hash crashed `re.fullmatch` with a
+  TypeError; added `is_hex64()` type guard (+ negative test: integer hash → 4
+  clean errors, no traceback).
+
+Full release-grade re-measure (the RELEASE_CHECKLIST gate) was then **run** on
+`master` @ `a884a158`:
+
+```
+R0_VALIDATE_BENCH_RUNS=8 ./scripts/validate.sh --full --require-metal
+  -> PASS 34 pass / 0 fail / 0 skip; metal_available: true
+  -> evidence/20260616T133558Z/ (evidence.json sha256 c400bf19…, MANIFEST verified)
+  -> hello 1.638x (799.6/1310.1 ms), hash 1.748x (61984.9/108348.9 ms),
+     busy 1.739x (150091.8/261021.7 ms)
+```
+
+`results/apple-m4-max.json` was updated to point the hello/hash/busy rows at this
+release-tree bundle with fresh medians + real per-workload hashes (adopter rows
+unchanged); `validate-results.py` → 0 errors; independent 28-field hash
+cross-check → 0 mismatches; all speedups match cpu/metal. README / RESULT.md /
+results/README.md / CHANGELOG updated to the release-tree numbers (CHANGELOG
+`[Unreleased]` → `[0.3.0] — 2026-06-16`). Remaining: a release PR for these doc
+updates, then the operator publishes the v0.3.0 GitHub release and (separately)
+posts the upstream-rfc — both human-pressed.

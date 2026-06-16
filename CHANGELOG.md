@@ -4,14 +4,16 @@ All notable changes to this project are documented here. This project pins a
 single RISC Zero toolchain (risc0-zkvm 3.0.5 / risc0-zkp 3.0.4 / rv32im circuit
 4.0.4); versions here track this repository, not RISC Zero.
 
-## [Unreleased] — A+ solo-readiness hardening
+## [0.3.0] — 2026-06-16 — A+ solo-readiness hardening
 
 Closes every maintainer-controlled credibility gap from the prior audit with
 code / docs / evidence, or bounds it explicitly. **No change to the proving
 lane's algorithmic behavior, and no broadened claim** — still pinned, still
 in-process-only, still one machine, recursion/lift/join and external `r0vm`
 still out of scope, and **third-party reproduction / external review still not
-claimed**. Not yet tagged; see [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
+claimed**. Validated on the release tree (`master` @ `a884a158`):
+`validate.sh --full --require-metal` **PASS 34/0/0** + `stress.sh --quick
+--require-metal` **PASS 30/30/0**; see [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
 
 ### Added
 - **Per-workload evidence provenance.** `results/schema/r0mh-results-v1.schema.json`
@@ -51,6 +53,16 @@ claimed**. Not yet tagged; see [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
   the one-command reproduce, the risk/adopter links, and a "Validated where?"
   table (hosted CI / self-hosted / release evidence / third-party: not yet
   claimed). REAUDIT.md and SECURITY.md document the new invariant tripwire.
+
+### Measured (Apple M4 Max, v0.3.0 release tree `a884a158`, 8 runs/lane, receipt verified every run)
+- `hello` (1 segment): **1.638×** — 799.6 ms vs 1310.1 ms.
+- `hash` (3 segments, real-dependency sha2 chain): **1.748×** — 61.98 s vs 108.35 s.
+- `busy` (multi-segment ALU loop): **1.739×** — 150.09 s vs 261.02 s.
+- Adopter workloads (`multiseg`/`mempress`/`shaheavy`/`ecdsa`) unchanged from
+  v0.2.0's Phase 2 bundle at **1.722–1.732×**. Deltas vs the v0.2.0 figures are
+  run-to-run variance; the eval_check CPU floor (~75–87 % of the proof) is what
+  bounds the speedup. Full data + per-workload evidence hashes:
+  `results/apple-m4-max.json`.
 
 ## [0.2.0] — 2026-06-12
 
@@ -159,5 +171,6 @@ verify with the stock verifier.
 - `hello` (1 segment): 1.70× — 842.0 ms vs 1433.3 ms.
 - `busy` (6 segments): 1.70× — 155.2 s vs 264.4 s.
 
+[0.3.0]: https://github.com/AnubisQuantumCipher/risc0-metal-hybrid/releases/tag/v0.3.0
 [0.2.0]: https://github.com/AnubisQuantumCipher/risc0-metal-hybrid/releases/tag/v0.2.0
 [0.1.0]: https://github.com/AnubisQuantumCipher/risc0-metal-hybrid/releases/tag/v0.1.0

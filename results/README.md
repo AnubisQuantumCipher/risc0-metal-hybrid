@@ -32,18 +32,19 @@ circuit-floor (`eval_check` on CPU), reported plainly, not a failure.
 
 40-core GPU, 12P+4E CPU, 48 GiB, macOS 26.0 (25A353). 1 warm-up + 8 serial runs
 per lane, receipt verified + journal asserted every run, CPU lane via
-`R0_DISABLE_METAL=1`. Evidence: `evidence/20260614T211748Z`
-(`evidence.json` sha256 `29fe0867…`).
+`R0_DISABLE_METAL=1`. Evidence: `evidence/20260616T133558Z`
+(`evidence.json` sha256 `c400bf19…`) — the v0.3.0 release-tree `validate.sh
+--full --require-metal` bundle (PASS 34/0/0).
 
 | Workload | Metal-hybrid | Pure CPU | Speedup | Peak RSS (metal / cpu) |
 |---|---|---|---|---|
-| `hello` (1 segment) | 865.0 ms | 1359.3 ms | 1.571× | 369 / 347 MB |
-| `hash` (SHA-256 chain, stock `sha2`) | 67.27 s | 116.63 s | 1.734× | 8.1 / 13.3 GB |
-| `busy` (multi-segment ALU loop) | 159.08 s | 281.01 s | 1.766× | 8.4 / 10.7 GB |
+| `hello` (1 segment) | 799.6 ms | 1310.1 ms | 1.638× | 368 / 346 MB |
+| `hash` (SHA-256 chain, stock `sha2`) | 61.98 s | 108.35 s | 1.748× | 8.2 / 13.6 GB |
+| `busy` (multi-segment ALU loop) | 150.09 s | 261.02 s | 1.739× | 8.5 / 10.7 GB |
 
-These are a fresh reproduction of the v0.2.0 protocol; the per-run deltas vs the
-published 1.70× / 1.63× / 1.70× are run-to-run variance on a shared machine (see
-the file's `notes`).
+These are the v0.3.0 release-tree re-measurement (master `a884a158`); the deltas
+vs the v0.2.0 figures (1.70× / 1.63× / 1.70×) are run-to-run variance on a shared
+machine (see the file's `notes`). The adopter rows below are unchanged.
 
 **Adopter workloads** (Phase 2, `evidence/adopter-20260615T102417Z`, 1 warm-up +
 5 serial runs/lane, receipt verified each run):

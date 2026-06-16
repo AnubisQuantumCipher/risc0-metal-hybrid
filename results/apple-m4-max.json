@@ -33,46 +33,46 @@
       "name": "hello",
       "segments": 1,
       "knobs": {},
-      "metal": { "median_ms": 865.0, "runs": 8, "receipt_verified": true, "peak_rss_mb": 369.2 },
-      "cpu": { "median_ms": 1359.3, "runs": 8, "receipt_verified": true, "peak_rss_mb": 347.4 },
-      "speedup": 1.571,
+      "metal": { "median_ms": 799.6, "runs": 8, "receipt_verified": true, "peak_rss_mb": 367.8 },
+      "cpu": { "median_ms": 1310.1, "runs": 8, "receipt_verified": true, "peak_rss_mb": 346.3 },
+      "speedup": 1.638,
       "evidence": {
-        "bundle": "evidence/20260614T211748Z",
-        "evidence_json_sha256": "29fe086744af712942da031246170883682897a54185ed3858325b265d762a4e",
-        "metal_csv_sha256": "e2a3f1704c9f8b11030ec6430f62e2036a291ca8c8a17b50835fddd0a08a538f",
-        "cpu_csv_sha256": "4f370e0155fc08874ee0f6f8b74f69136a6b25a40cd65bbaa3f37d5d8c35201e",
-        "profile_log_sha256": "9c470e6af8ca0948ad57a5cb5eaf2d0cb5b39d340f01f7ebc0d7f9cb82951d41",
-        "notes": "validate.sh --full bundle; canonical JSON is evidence.json. metal/cpu CSVs are bench/hello-{metal,cpu}.csv; profile_log is logs/profile-hello-metal.log. validate.sh profiles only `hello`, and that profile establishes the lane-invariant circuit floor (RESULT.md phase-attribution) that bounds every workload."
+        "bundle": "evidence/20260616T133558Z",
+        "evidence_json_sha256": "c400bf192ab675b2146ca11743836de0e8871e2125761581033902d83fde7813",
+        "metal_csv_sha256": "78e93a7133c6dda286f069c02b21a4da930ed5ac2bac2311425a0e29c6a47af4",
+        "cpu_csv_sha256": "edb2c29e89a406ff944c9861633fe20ca510b392153f96b7f4fac6f0e45fecb4",
+        "profile_log_sha256": "2b214392ba13f9f43797c2eeb72a1e2570623920dab5cfd2d1d9cf0c0fb52912",
+        "notes": "v0.3.0 release-tree re-measure: validate.sh --full --require-metal PASS 34/0/0 on master @ a884a158, 8 serial runs/lane, receipt verified + journal asserted each run. Canonical JSON is evidence.json; metal/cpu CSVs are bench/hello-{metal,cpu}.csv; profile_log is logs/profile-hello-metal.log (the lane-invariant circuit floor it establishes bounds every workload — RESULT.md)."
       }
     },
     {
       "name": "hash",
       "knobs": { "R0_HASH_ITERS": "512" },
-      "metal": { "median_ms": 67265.3, "runs": 8, "receipt_verified": true, "peak_rss_mb": 8116.0 },
-      "cpu": { "median_ms": 116630.7, "runs": 8, "receipt_verified": true, "peak_rss_mb": 13323.0 },
-      "speedup": 1.734,
+      "metal": { "median_ms": 61984.9, "runs": 8, "receipt_verified": true, "peak_rss_mb": 8205.5 },
+      "cpu": { "median_ms": 108348.9, "runs": 8, "receipt_verified": true, "peak_rss_mb": 13552.8 },
+      "speedup": 1.748,
       "evidence": {
-        "bundle": "evidence/20260614T211748Z",
-        "evidence_json_sha256": "29fe086744af712942da031246170883682897a54185ed3858325b265d762a4e",
-        "metal_csv_sha256": "9e1d7dfac1e49068f523f725dabb14f5033778ad1f55e2e839e2acd3ed66e66d",
-        "cpu_csv_sha256": "9dd9f465e1b05522efc2c328fd55f1f9829b147c82bfbe83b6075c5e4f1e9eff",
+        "bundle": "evidence/20260616T133558Z",
+        "evidence_json_sha256": "c400bf192ab675b2146ca11743836de0e8871e2125761581033902d83fde7813",
+        "metal_csv_sha256": "16cdf9deca90b6d45b01b363c476df72fd51c9edded36c5ef4e53e6e15aa9c58",
+        "cpu_csv_sha256": "b1bdee5d2b46c75ab3dc5dc52299bf49efcd0a73dc3488c14bd4addbd93658ce",
         "profile_log_sha256": null,
-        "notes": "validate.sh --full bundle; canonical JSON is evidence.json. metal/cpu CSVs are bench/hash-{metal,cpu}.csv. profile_log is null: validate.sh profiles only `hello`, so no logs/profile-hash-metal.log exists in this bundle; the lane-invariant floor it establishes is confirmed for `hash` in RESULT.md's phase-attribution table."
+        "notes": "v0.3.0 release-tree re-measure (validate.sh --full --require-metal, master @ a884a158); canonical JSON is evidence.json; CSVs are bench/hash-{metal,cpu}.csv. profile_log is null: validate.sh profiles only `hello`, so no logs/profile-hash-metal.log exists; the lane-invariant floor is confirmed for `hash` in RESULT.md's phase table."
       }
     },
     {
       "name": "busy",
       "knobs": { "R0_BUSY_ITERS": "1000000" },
-      "metal": { "median_ms": 159078.0, "runs": 8, "receipt_verified": true, "peak_rss_mb": 8419.0 },
-      "cpu": { "median_ms": 281009.7, "runs": 8, "receipt_verified": true, "peak_rss_mb": 10687.5 },
-      "speedup": 1.766,
+      "metal": { "median_ms": 150091.8, "runs": 8, "receipt_verified": true, "peak_rss_mb": 8451.9 },
+      "cpu": { "median_ms": 261021.7, "runs": 8, "receipt_verified": true, "peak_rss_mb": 10674.6 },
+      "speedup": 1.739,
       "evidence": {
-        "bundle": "evidence/20260614T211748Z",
-        "evidence_json_sha256": "29fe086744af712942da031246170883682897a54185ed3858325b265d762a4e",
-        "metal_csv_sha256": "7382c7d40d0f87fcded2000104ffb020b7a85a05726e506cf54d6417ba0f2344",
-        "cpu_csv_sha256": "5e724e4b4b285eeb76a48af4d484dfcea9a1b8d96023b7c614c3562bfe32141f",
+        "bundle": "evidence/20260616T133558Z",
+        "evidence_json_sha256": "c400bf192ab675b2146ca11743836de0e8871e2125761581033902d83fde7813",
+        "metal_csv_sha256": "e0f11f78b3b2e3283e5b4387723b813f4b235536f7d84d85f8fd4be1f98be619",
+        "cpu_csv_sha256": "0de8d961468a510a270e4e3e1060de60444f400033767c5ba3de16f563fc6e93",
         "profile_log_sha256": null,
-        "notes": "validate.sh --full bundle; canonical JSON is evidence.json. metal/cpu CSVs are bench/busy-{metal,cpu}.csv. profile_log is null: validate.sh profiles only `hello`, so no logs/profile-busy-metal.log exists in this bundle; the lane-invariant floor is confirmed for `busy` in RESULT.md's phase-attribution table."
+        "notes": "v0.3.0 release-tree re-measure (validate.sh --full --require-metal, master @ a884a158); canonical JSON is evidence.json; CSVs are bench/busy-{metal,cpu}.csv. profile_log is null: validate.sh profiles only `hello`; the lane-invariant floor is confirmed for `busy` in RESULT.md's phase table."
       }
     },
     {
@@ -88,7 +88,7 @@
         "metal_csv_sha256": "94c348d554e9bd52bb4067d591014633d73e5f1b3a066b160c94c103ce552bbb",
         "cpu_csv_sha256": "9b1780012900a429ef7fb74ca6996dc2ab790d0b019c97dfaf560f51b55cd8e9",
         "profile_log_sha256": "d51efb109081fd6ddaee7cb2d4c027f3dcb8e8b6975695d012916d9a2c06212f",
-        "notes": "bench-adopter.sh bundle; its canonical machine-readable JSON is summary.json (bench-adopter writes summary.json, not evidence.json). metal/cpu CSVs are bench/multiseg-{metal,cpu}.csv; profile_log is logs/profile-multiseg-metal.log. Protocol: 1 warm-up + 5 serial runs/lane, receipt verified + journal asserted each run."
+        "notes": "bench-adopter.sh bundle (unchanged at v0.3.0; the --full re-measure covers hello/hash/busy only). Its canonical machine-readable JSON is summary.json (bench-adopter writes summary.json, not evidence.json). metal/cpu CSVs are bench/multiseg-{metal,cpu}.csv; profile_log is logs/profile-multiseg-metal.log. Protocol: 1 warm-up + 5 serial runs/lane, receipt verified + journal asserted each run."
       }
     },
     {
@@ -104,7 +104,7 @@
         "metal_csv_sha256": "3258915ba837811eb7c46a10bb83de442b59f31f518979e8dcc6adb9a78b742a",
         "cpu_csv_sha256": "a53a925239a3a6f5b3fb3fb34811c8f6b94b0e4be6fee9b4eaf672cf60625b59",
         "profile_log_sha256": "75c4d864e8628533f6e77a4cb268bd3e393dbf3e85b2a51cf47977d61e2f5321",
-        "notes": "bench-adopter.sh bundle; canonical JSON is summary.json. metal/cpu CSVs are bench/mempress-{metal,cpu}.csv; profile_log is logs/profile-mempress-metal.log. Protocol: 1 warm-up + 5 serial runs/lane, receipt verified each run."
+        "notes": "bench-adopter.sh bundle (unchanged at v0.3.0); canonical JSON is summary.json. metal/cpu CSVs are bench/mempress-{metal,cpu}.csv; profile_log is logs/profile-mempress-metal.log. Protocol: 1 warm-up + 5 serial runs/lane, receipt verified each run."
       }
     },
     {
@@ -120,7 +120,7 @@
         "metal_csv_sha256": "beddb2557419754d952382684e93b8b77ac4a065719feefcafd747ab70db8e45",
         "cpu_csv_sha256": "ea1d66b19a5ce73fcbeb0f42518f3f4a4b5b0f666c5fe71698c1804356241037",
         "profile_log_sha256": "a32bdbcad0a344a63cc5e99384097d71d4933a400d30965e0c25a58cefa5f2bd",
-        "notes": "bench-adopter.sh bundle; canonical JSON is summary.json. metal/cpu CSVs are bench/shaheavy-{metal,cpu}.csv; profile_log is logs/profile-shaheavy-metal.log. Protocol: 1 warm-up + 5 serial runs/lane, receipt verified each run."
+        "notes": "bench-adopter.sh bundle (unchanged at v0.3.0); canonical JSON is summary.json. metal/cpu CSVs are bench/shaheavy-{metal,cpu}.csv; profile_log is logs/profile-shaheavy-metal.log. Protocol: 1 warm-up + 5 serial runs/lane, receipt verified each run."
       }
     },
     {
@@ -136,15 +136,15 @@
         "metal_csv_sha256": "488fd163b8a440a103341e322ec182cbabefe1bf97c7286f58fd0a8c74fece9d",
         "cpu_csv_sha256": "0740260b1604c913233f889be8b226072c243f8f30ae6846c3451e58a1bf59d5",
         "profile_log_sha256": "8b55e41f304eb7fe6748c72b17c3f292e72a96f08bff1fd0870a168b128cd8ed",
-        "notes": "bench-adopter.sh bundle; canonical JSON is summary.json. metal/cpu CSVs are bench/ecdsa-{metal,cpu}.csv; profile_log is logs/profile-ecdsa-metal.log. Protocol: 1 warm-up + 5 serial runs/lane, receipt verified each run."
+        "notes": "bench-adopter.sh bundle (unchanged at v0.3.0); canonical JSON is summary.json. metal/cpu CSVs are bench/ecdsa-{metal,cpu}.csv; profile_log is logs/profile-ecdsa-metal.log. Protocol: 1 warm-up + 5 serial runs/lane, receipt verified each run."
       }
     }
   ],
   "evidence": {
-    "bundle": "evidence/20260614T211748Z",
-    "evidence_json_sha256": "29fe086744af712942da031246170883682897a54185ed3858325b265d762a4e",
+    "bundle": "evidence/20260616T133558Z",
+    "evidence_json_sha256": "c400bf192ab675b2146ca11743836de0e8871e2125761581033902d83fde7813",
     "verdict": "PASS"
   },
-  "measured_at_utc": "20260614T211748Z",
-  "notes": "Phase 0 reproduction of the v0.2.0 protocol (1 warm-up + 8 serial runs/lane, receipt verified + journal asserted each run, CPU lane via R0_DISABLE_METAL=1). Reproduced speedups (1.571x/1.734x/1.766x for hello/hash/busy) vs the published v0.2.0 medians (1.70x/1.63x/1.70x): hash and busy came in slightly higher, hello lower (the ~1s single-segment proof is the most variance-sensitive; its CPU lane ran faster this session). All within run-to-run variance on a shared machine; the structural story (eval_check CPU floor bounds the speedup) is unchanged. The hello/hash/busy rows come from the validate.sh bundle evidence/20260614T211748Z (top-level pointer); the multiseg/mempress/shaheavy/ecdsa adopter rows are from evidence/adopter-20260615T102417Z (summary.json sha256 ec7ff1f8ab3759a36e123afedfdaed8552050d9092c35cd976382c9faec87f08), 1 warm-up + 5 serial runs/lane (fewer than 8 because each run is 2-4 min; metal variance was ~0.2%). Each workload's exact files are pinned in its own per-workload evidence block. All four adopter rows cluster at 1.722x-1.732x; their measured circuit floor is ~87% (eval_check ~83%) with ~13% generic-on-GPU, i.e. the speedup holds across ECDSA-verify, SHA-256-heavy, memory-pressure, and long multi-segment proofs and does not erode toward 1x at these sizes."
+  "measured_at_utc": "20260616T133558Z",
+  "notes": "v0.3.0 release-tree measurement. hello/hash/busy were re-measured on master @ a884a158 with validate.sh --full --require-metal (PASS 34/0/0; 1 warm-up + 8 serial runs/lane; receipt verified + journal asserted each run; CPU lane via R0_DISABLE_METAL=1) — bundle evidence/20260616T133558Z (top-level pointer). Speedups 1.638/1.748/1.739x for hello/hash/busy are within run-to-run variance of the v0.2.0/Phase-0 figures (1.70/1.63/1.70x and 1.571/1.734/1.766x); the structural story (eval_check CPU floor bounds the speedup) is unchanged. The multiseg/mempress/shaheavy/ecdsa adopter rows are unchanged from the Phase 2 bundle evidence/adopter-20260615T102417Z (summary.json sha256 ec7ff1f8ab3759a36e123afedfdaed8552050d9092c35cd976382c9faec87f08), 1 warm-up + 5 serial runs/lane, all clustering at 1.722x-1.732x with a measured ~87% (eval_check ~83%) circuit floor. Each workload's exact files are pinned in its own per-workload evidence block; the speedup holds across single-segment, multi-segment, real-dependency sha2/k256, memory-pressure, and ECDSA-verify workloads and does not erode toward 1x at these sizes."
 }
