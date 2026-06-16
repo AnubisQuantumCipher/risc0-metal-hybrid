@@ -1,29 +1,64 @@
 # risc0-metal-hybrid
 
-Make RISC Zero proving use the Apple Silicon GPU. Today, stock risc0 v3.0.5
-proves entirely on the CPU on every Mac — the shipped `r0vm` binary contains no
-Metal HAL, the `metal` cargo feature forwards nowhere, and the rv32im circuit
-has no Metal lane ([evidence](https://github.com/AnubisQuantumCipher/r0-metal-doctor)).
-This repo fixes that with a **hybrid lane**: the generic STARK operations (NTT,
+Make RISC Zero proving use the Apple Silicon GPU — within a pinned, in-process,
+rv32im envelope — with receipts that verify on the **stock verifier**.
+
+**What this is.** A vendored, exactly-pinned patch to `risc0-circuit-rv32im`
+4.0.4 that adds a **hybrid proving lane**: the generic STARK operations (NTT,
 FRI, Merkle, hashing — the dominant generic-proving costs) run on the GPU via
 risc0's own existing-but-orphaned Metal HAL, while the circuit-specific kernels
-keep running on the CPU, over shared unified-memory buffers. Receipts verify
-with the **stock verifier**.
+(witgen / accumulate / eval_check) keep running on the CPU, over shared
+unified-memory buffers. Stock risc0 v3.0.5 proves entirely on the CPU on every
+Mac — no Metal HAL in `r0vm`, the `metal` feature forwards nowhere, no rv32im
+Metal lane ([evidence](https://github.com/AnubisQuantumCipher/r0-metal-doctor)).
 
-**Measured on an M4 Max** (same binary per lane, 8 controlled runs each, receipt
-verified every run): **1.70×** on a single-segment guest (842.0 ms vs 1433.3 ms
-pure-CPU), **1.70×** on a circuit-heavier multi-segment guest (155.2 s vs
-264.4 s), and **1.63×** on a real-dependency guest — an iterated SHA-256 chain
-through the stock `sha2` crate (67.3 s vs 110.0 s) — so the speedup holds, not
-erodes, on harder and more realistic workloads. Four further adopter workloads —
-a secp256k1 ECDSA verify (stock `k256`), a SHA-256-heavy hash, a memory-pressure
-guest, and a long multi-segment proof — were since measured at **1.72–1.73×** on
-the same machine (5 runs/lane, receipt verified each;
-[results/apple-m4-max.json](results/apple-m4-max.json)), with the same ~87 %
-circuit-kernel floor — so the speedup holds across ECDSA, heavy hashing, and
-memory pressure too, and still does not erode toward 1× at these sizes. Full data
-and honest scope in [RESULT.md](RESULT.md). Do not generalize the numbers beyond
-these measured workloads on this one machine.
+**What it is not.** Not a full GPU port (the ~90K-line circuit kernels stay on
+CPU — that is the load-shaped solution, not a compromise; see below). Not
+upstream (a vendored `[patch.crates-io]`). Not for the external `r0vm` server
+(in-process only). Not recursion / lift / join. Not post-quantum-preserving when
+wrapped. Not third-party reproduced yet. The exact boundaries are in
+[WORKLOAD_MATRIX.md](WORKLOAD_MATRIX.md) and [ADOPTER_RISK.md](ADOPTER_RISK.md).
+
+**Supported version envelope (frozen).** `risc0-zkvm =3.0.5` · `risc0-zkp 3.0.4`
+· `risc0-circuit-rv32im =4.0.4` (vendored + patch) · `sha2 =0.10.9` · macOS on
+Apple Silicon (Tier-2 Metal). A bump is a re-audit event, not a routine update
+([REAUDIT.md](REAUDIT.md)); the pins are CI-guarded (`scripts/check-pins.sh`).
+
+**Measured hardware.** One **Apple M4 Max** (40-core GPU, 48 GiB, macOS 26.0),
+1 warm-up + 5–8 serial runs/lane, **receipt verified + journal asserted every
+run**: **~1.57–1.77×** end-to-end vs pure CPU across **seven** rv32im workloads
+(single-segment, multi-segment, real-dependency `sha2`/`k256`, memory-pressure,
+secp256k1 ECDSA). Exact per-workload numbers, with a per-workload evidence hash,
+in [results/apple-m4-max.json](results/apple-m4-max.json); full analysis in
+[RESULT.md](RESULT.md). **Do not generalize these numbers** beyond these
+workloads on this one machine.
+
+**Why the speedup is bounded.** The eval_check-dominated **circuit floor runs on
+CPU in both lanes** and is ~75–87 % of the proof; the GPU only accelerates the
+generic remainder (measured 3.5–6.9×). So the structural ceiling is ~2.0–2.1×
+and **falls toward 1× as a guest gets more circuit-heavy** — measure your own
+guest with `host profile`. A bigger multiplier needs a Metal `eval_check`, which
+risc0 deprecated in 2023 (risc0#937/#999/#1310); that is the open hard problem,
+not a tuning exercise.
+
+**Reproduce (one command, Apple Silicon):**
+
+```bash
+./scripts/validate.sh --require-metal      # build + parity + both lanes (receipt-verified) + benches → evidence/<UTC>/
+```
+
+**Risk & scope:** [ADOPTER_RISK.md](ADOPTER_RISK.md) (use / don't-use, risk
+classes) · [WORKLOAD_MATRIX.md](WORKLOAD_MATRIX.md) (what's measured vs not
+claimed) · [REVIEWER_PACKET.md](REVIEWER_PACKET.md) (for reviewers).
+
+### Validated where?
+
+| Lane | What runs there |
+|---|---|
+| **Hosted CI** (GitHub) | rustfmt, clippy (`-D warnings`), patch-consistency, results-schema, frozen-pins, the risc0-zkp invariant tripwire, script syntax, build + **CPU lane** prove/verify, and the GPU-probe-falls-back-to-CPU regression |
+| **Self-hosted Apple Silicon** (opt-in) | the **Metal lane**: `validate.sh --ci --require-metal` + `stress.sh --quick` (only if `APPLE_SILICON_SELF_HOSTED=true`) |
+| **Release evidence** | full `scripts/validate.sh` M4 Max bundle attached to each release; per-workload hashes in `results/` |
+| **Third-party reproduction** | **not yet claimed** — no independent reproduction or external review exists yet |
 
 ## Use it (two steps)
 
@@ -70,6 +105,17 @@ serial benchmarks — and writes a machine-readable evidence bundle to
 ./scripts/validate.sh           # full correctness + hello/hash benches (~45 min)
 ./scripts/validate.sh --ci      # correctness + fail-closed only (no benches)
 ./scripts/validate.sh --full    # adds the long busy benches (~40 min extra)
+```
+
+Hammer the CPU↔GPU hand-off (alternating lanes, multi-segment, every run
+receipt-verified + lane-asserted), and make each evidence bundle tamper-evident:
+
+```bash
+./scripts/stress.sh --quick --require-metal   # ≥5 cycles of alternating metal/cpu (~10 min)
+./scripts/stress.sh --overnight               # many randomized cycles (run it overnight)
+./scripts/hash-evidence.sh evidence/<UTC>     # MANIFEST.sha256 over the bundle (+ gpg sig if you have a key)
+./scripts/verify-evidence-manifest.sh evidence/<UTC>   # re-check it
+./scripts/check-risc0-zkp-invariants.sh       # the pinned-source invariant tripwire (no GPU needed)
 ```
 
 Or piece by piece:
@@ -140,7 +186,13 @@ shipped, tested, and unreachable in stock builds. The circuit traits
   one-time stderr notice; never a panic.
 - Every hand-off of a Metal buffer to the CPU C++ kernels asserts the buffer is
   a base (offset-0) allocation, so the zero-copy pointer aliasing is checked,
-  not just assumed.
+  not just assumed. Both that offset-0 assumption and the per-op
+  synchronous-dispatch assumption are additionally machine-checked by a
+  build-time tripwire
+  ([`scripts/check-risc0-zkp-invariants.sh`](scripts/check-risc0-zkp-invariants.sh),
+  run as the `risc0-zkp-invariants` check in `scripts/validate.sh`), which fails
+  closed if either pattern drifts in the pinned `risc0-zkp` source. It is a
+  tripwire, not a proof — see [REAUDIT.md](REAUDIT.md).
 - The hash suite is `Poseidon2HashSuite` — identical to CPU proving and to the
   verifier, which is why receipts verify unchanged.
 
@@ -214,9 +266,12 @@ hosted CI. The evidence bundle attached to the release reproduces all of it.
 | [patches/](patches/) | The same change as a reviewable diff against pristine 4.0.4 |
 | [e2e/](e2e/) | Working example host + guests + in-process A/B benchmark + unit tests |
 | [m0-metalhal-smoke/](m0-metalhal-smoke/) | Standalone proof that risc0-zkp's Metal HAL computes bit-identically to CPU — 9 tests: NTT expand/evaluate, NTT interpolate, forward→inverse round trip, bit-reverse, eltwise, zk-shift, FRI fold, Poseidon2 hash_rows, Poseidon2 hash_fold |
-| [scripts/validate.sh](scripts/validate.sh) | The whole validation suite as one command → `evidence/<UTC>/` bundle |
+| [scripts/](scripts/) | `validate.sh` (full suite → `evidence/<UTC>/`), `stress.sh` (CPU↔GPU chaos), `check-risc0-zkp-invariants.sh` (pinned-source tripwire), `check-pins.sh` (frozen-pin guard), `hash-evidence.sh` + `verify-evidence-manifest.sh` (bundle manifests), `validate-results.py` (per-chip result schema/invariants), `reproduce.sh` |
 | [bench/](bench/) | Raw benchmark CSVs from the controlled runs (`hello-*`, `busy-*`, `hash-*`) |
+| [results/](results/) | Per-chip benchmark contributions (schema-validated, per-workload evidence hashes); M4 Max measured, other chips `not_measured` placeholders |
 | [RESULT.md](RESULT.md) | Measured results, scope, limitations, honest recommendation |
+| [WORKLOAD_MATRIX.md](WORKLOAD_MATRIX.md) · [ADOPTER_RISK.md](ADOPTER_RISK.md) | What is measured vs not claimed; the blunt use / don't-use + risk-class guide |
+| [REVIEWER_PACKET.md](REVIEWER_PACKET.md) · [upstream-rfc/](upstream-rfc/) | Reviewer packet (soliciting review) and the draft upstream RFC package (not posted) |
 | [REAUDIT.md](REAUDIT.md) | Mandatory checklist before ANY pinned dependency bump |
 | [SECURITY.md](SECURITY.md) · [CHANGELOG.md](CHANGELOG.md) | Reporting policy and release history |
 
@@ -232,16 +287,23 @@ compiles with `disable-dev-mode`, so a stray `RISC0_DEV_MODE=1` fails closed
 instead of faking a proof; malformed workload parameters exit non-zero instead
 of silently benchmarking something else; rustfmt and clippy (`-D warnings`)
 are CI-enforced; CI checks that the vendored crate is exactly pristine 4.0.4
-plus the committed patch; and `./scripts/validate.sh` reproduces the entire
-validation surface as one evidence bundle, attached to each release.
+plus the committed patch; the frozen pins are CI-guarded; the two cross-crate
+invariants have a build-time tripwire; a stress suite hammers the CPU↔GPU
+hand-off; every published per-chip number carries a per-workload evidence hash;
+and `./scripts/validate.sh` reproduces the entire validation surface as one
+evidence bundle, attached to each release.
 
 The remaining caveats are scope, not soundness: it is pinned to **risc0-zkvm
-3.0.5 / risc0-zkp 3.0.4 (exact) / circuit 4.0.4**, benchmarked on one machine
-across three workloads, and distributed as a vendored `[patch]` rather than an
-upstream path. Recursion / lift / join paths and external `r0vm` proving are
-out of scope. A version bump requires the [REAUDIT.md](REAUDIT.md) checklist —
+3.0.5 / risc0-zkp 3.0.4 (exact) / circuit 4.0.4**, benchmarked on **one machine
+across seven workloads**, and distributed as a vendored `[patch]` rather than an
+upstream path. Recursion / lift / join paths and external `r0vm` proving are out
+of scope ([WORKLOAD_MATRIX.md](WORKLOAD_MATRIX.md)). **No independent third-party
+reproduction or external review exists yet** — none is claimed; the
+[REVIEWER_PACKET.md](REVIEWER_PACKET.md) and [upstream-rfc/](upstream-rfc/) exist
+to solicit both. A version bump requires the [REAUDIT.md](REAUDIT.md) checklist —
 the two cross-crate invariants the zero-copy hybrid rests on are properties of
-the *pinned* risc0-zkp, not its semver contract. Related upstream issue:
+the *pinned* risc0-zkp, not its semver contract (now machine-tripwired, not just
+documented). Related upstream issue:
 [risc0/risc0#3753](https://github.com/risc0/risc0/issues/3753).
 
 ## License

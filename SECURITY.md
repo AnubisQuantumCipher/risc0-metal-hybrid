@@ -30,12 +30,19 @@ statement produce a verifying receipt. In scope, most-to-least severe:
   invariants of the pinned risc0-zkp, documented in
   [`src/prove/hal/metal.rs`](vendor/risc0-circuit-rv32im/src/prove/hal/metal.rs):
   (1) every buffer handed to the CPU kernels is a base (offset-0) allocation —
-  runtime-asserted by `checked_base_ptr`; and (2) per-op synchronous GPU
-  dispatch keeps the GPU quiescent at each hand-off. If either is violated the
-  resulting receipt fails the stock verifier, so the practical failure mode is
-  availability, not a forged proof — but a *demonstrated* path to witness
-  corruption that survives verification would be a soundness bug and is exactly
-  what we want to hear about.
+  runtime-asserted by `checked_base_ptr` (with a negative test); and (2) per-op
+  synchronous GPU dispatch keeps the GPU quiescent at each hand-off. Both are
+  also covered by a build-time **tripwire**,
+  [`scripts/check-risc0-zkp-invariants.sh`](scripts/check-risc0-zkp-invariants.sh)
+  (the `risc0-zkp-invariants` check in `scripts/validate.sh` and a CI job), which
+  fails closed if either source pattern drifts in the pinned risc0-zkp. The
+  tripwire is a source-pattern match against the pinned version, not a proof:
+  see [REAUDIT.md](REAUDIT.md) for the manual re-read that still governs any
+  version bump. If either invariant is violated the resulting receipt fails the
+  stock verifier, so the practical failure mode is availability, not a forged
+  proof — but a *demonstrated* path to witness corruption that survives
+  verification would be a soundness bug and is exactly what we want to hear
+  about.
 - Memory-safety defects in the added `unsafe` (the HAL operates on raw host
   pointers into Metal unified memory).
 - The dev-mode guard: the example host compiles with `disable-dev-mode`, so a

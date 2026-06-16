@@ -126,6 +126,15 @@ patch_consistency() {
 run_check patch-consistency "vendor == pristine 4.0.4 + patch, full tree" patch_consistency
 
 # ---------------------------------------------------------------------------
+# 1b. Pinned risc0-zkp invariant tripwire: the two cross-crate properties the
+#     zero-copy hybrid rests on (offset-0 buffers; per-op synchronous dispatch)
+#     are still present in the EXACT pinned risc0-zkp source. A tripwire, not a
+#     proof — it catches the silent source drift REAUDIT.md names, fail-closed.
+# ---------------------------------------------------------------------------
+run_check risc0-zkp-invariants "offset-0 + sync-dispatch patterns present in pinned risc0-zkp" \
+  bash "$ROOT/scripts/check-risc0-zkp-invariants.sh"
+
+# ---------------------------------------------------------------------------
 # 2. Formatting and lints
 # ---------------------------------------------------------------------------
 run_check fmt-e2e "rustfmt clean" cargo fmt --all --check --manifest-path e2e/Cargo.toml

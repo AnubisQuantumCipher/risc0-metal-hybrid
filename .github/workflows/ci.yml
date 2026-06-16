@@ -85,6 +85,60 @@ jobs:
             || python3 -m pip install --quiet 'jsonschema>=4'
           python3 scripts/validate-results.py
 
+  check-pins:
+    # Frozen-pins guard: the risc0 internal versions and the [patch.crates-io]
+    # block (and sha2) must not drift. A bump is a re-audit event (REAUDIT.md),
+    # not a routine PR, so this fails CI if the watched lines change.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1 (Node 24)
+        with:
+          persist-credentials: false
+      - name: Frozen-pin check
+        run: ./scripts/check-pins.sh
+
+  check-risc0-zkp-invariants:
+    # Cross-crate invariant tripwire: the two load-bearing properties of the
+    # PINNED risc0-zkp (offset-0 buffer pointers; per-op synchronous dispatch)
+    # must still be present in the source. The script reads the version from
+    # e2e/Cargo.lock and downloads the pinned risc0-zkp crate from crates.io if
+    # it is not already in the cargo cache, so this needs only curl + bash.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1 (Node 24)
+        with:
+          persist-credentials: false
+      - name: risc0-zkp invariant tripwire (pinned source)
+        run: ./scripts/check-risc0-zkp-invariants.sh
+
+  script-lint:
+    # The validation/evidence scripts gate the project's credibility, so they
+    # are themselves checked: bash -n on every script (always), plus shellcheck
+    # at error severity when it is available on the runner. (Intentional word
+    # splitting like `env $pfx ...` is style, not error, so it does not fail.)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1 (Node 24)
+        with:
+          persist-credentials: false
+      - name: bash -n (syntax) on all scripts
+        run: |
+          rc=0
+          for s in scripts/*.sh; do bash -n "$s" && echo "ok  $s" || { echo "FAIL $s"; rc=1; }; done
+          exit $rc
+      - name: shellcheck (if available, error severity)
+        run: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck --severity=error scripts/*.sh && echo "shellcheck (error severity): clean"
+          else
+            echo "shellcheck not installed on this runner; bash -n above is the gate"
+          fi
+      - name: python syntax on validate-results.py
+        run: python3 -m py_compile scripts/validate-results.py && echo "validate-results.py compiles"
+
   build-and-cpu-lane:
     # Hosted Apple Silicon runner: builds the patched stack, proves the CPU
     # lane, and confirms the runtime probe falls back to CPU on the GPU-less
@@ -184,7 +238,12 @@ jobs:
         # self-hosted box) FAILS the metal-capability check instead of skipping
         # the metal checks and going green on CPU-only coverage.
         run: ./scripts/validate.sh --ci --require-metal
-      - name: Upload validation evidence bundle
+      - name: Stress / chaos (CPU<->GPU hand-off, alternating lanes)
+        # >=5 cycles of alternating metal/cpu hello/hash/busy, every run
+        # receipt-verified + lane-asserted; --require-metal so a GPU-less box
+        # fails rather than silently passing. Writes evidence/stress-<UTC>/.
+        run: ./scripts/stress.sh --quick --require-metal
+      - name: Upload validation + stress evidence bundles
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:

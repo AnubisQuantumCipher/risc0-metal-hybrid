@@ -8,6 +8,21 @@ the zero-fabrication invariants in [`../scripts/validate-results.py`](../scripts
 evidence bundle on that machine.** A chip no one has run is present only as a
 `status: "not_measured"` placeholder — never invented.
 
+Each measured workload additionally carries a **per-workload `evidence` block**
+pinning the exact files behind that single row: the bundle, its canonical
+evidence JSON (`evidence.json` for a `validate.sh` bundle, `summary.json` for a
+`bench-adopter.sh` bundle), and the `sha256` of `bench/<name>-{metal,cpu}.csv`
+and the per-phase profile log. A reader hashes the named files in the cited
+bundle and compares — provenance is per-number, not per-file. A profile hash is
+`null` only when that file does not exist in the bundle (e.g. `validate.sh`
+profiles only `hello`), and the row's `notes` say why. No hash is invented; the
+validator rejects a measured row missing its block or carrying a malformed hash.
+
+Each bundle is also made tamper-evident with
+[`../scripts/hash-evidence.sh`](../scripts/hash-evidence.sh) (a `MANIFEST.sha256`
+over every file, optionally a detached gpg signature) and re-checkable with
+[`../scripts/verify-evidence-manifest.sh`](../scripts/verify-evidence-manifest.sh).
+
 Do not generalize any number across chips. A near-1× speedup is the expected
 circuit-floor (`eval_check` on CPU), reported plainly, not a failure.
 
