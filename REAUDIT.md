@@ -27,12 +27,24 @@ not the docs):
   generic Metal op still ends in
   `cmd_buffer.commit(); cmd_buffer.wait_until_completed();`
   (3.0.4: `src/hal/metal.rs:475-476`, via the shared dispatch helper). Check
-  EVERY dispatch path, not just one. This invariant is **not enforceable from
-  this repository** and fails *silently* if upstream moves to asynchronous
-  command buffers: CPU circuit kernels would race the GPU on shared buffers
-  and corrupt witnesses nondeterministically. (The stock verifier rejects the
-  corrupted receipt — an availability failure, not a soundness one — but a
-  prover that intermittently fails to prove is broken.)
+  EVERY dispatch path, not just one. If upstream moves to asynchronous command
+  buffers, CPU circuit kernels would race the GPU on shared buffers and corrupt
+  witnesses nondeterministically. (The stock verifier rejects the corrupted
+  receipt — an availability failure, not a soundness one — but a prover that
+  intermittently fails to prove is broken.)
+
+- [ ] **Run the machine tripwire** as a first pass:
+  `scripts/check-risc0-zkp-invariants.sh` (also the `risc0-zkp-invariants`
+  check inside `scripts/validate.sh`). It reads the *pinned* risc0-zkp source
+  and fails closed if `as_ptr`/`view` drift apart (Invariant 1) or the live
+  `commit(); wait_until_completed();` pair disappears or stops being adjacent
+  (Invariant 2). This converts what used to fail *silently in the field* into a
+  failing check. **It is a source-pattern match against the pinned version, not
+  a proof and not a substitute for the manual re-read above** — a logically
+  equivalent async rewrite that kept the same tokens, or a new dispatch path it
+  does not recognise, would pass it. After a real bump, update the script's
+  `EXPECTED_ZKP_VERSION` to the new version (so the tripwire covers it) only
+  once the two manual re-reads above are done.
 
 ## 2. Re-derive the vendored patch
 

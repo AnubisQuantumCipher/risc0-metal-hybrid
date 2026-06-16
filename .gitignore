@@ -9,3 +9,7 @@ _private-staging/
 
 # validation evidence bundles are release/CI artifacts, not commits
 evidence/
+
+# python bytecode cache
+__pycache__/
+*.pyc

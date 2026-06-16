@@ -12,7 +12,10 @@ trustworthy because a real evidence bundle (gitignored / release asset) backs
 them and a human reviewed it. This validator guards against the failure modes a
 machine CAN catch: schema drift, a placeholder masquerading as data, an
 unverified receipt, a speedup that does not match its own timings, a chip_key
-that does not match its filename.
+that does not match its filename, and — as of the per-workload provenance change
+— a measured row missing its own evidence block or carrying a malformed/blank
+provenance hash. A null CSV/profile hash is allowed only with a reason in notes;
+no hash is invented.
 """
 import json
 import os
@@ -26,6 +29,38 @@ RESULTS_DIR = os.path.join(ROOT, "results")
 SPEEDUP_TOL = 0.02  # |reported - cpu/metal| / (cpu/metal) must be within 2%
 
 WORKLOAD_IDS = {"hello", "busy", "hash", "ecdsa", "shaheavy", "mempress", "multiseg"}
+HEX64 = re.compile(r"[a-f0-9]{64}")
+
+
+def workload_evidence_errs(name, ev):
+    """Per-workload provenance invariants the schema cannot fully express: the
+    row must point at a bundle, carry a 64-hex evidence-JSON hash, and carry the
+    three per-lane/profile hashes as EITHER 64 hex OR null — and a null is only
+    honest if 'notes' explains why (the file is absent in that bundle). No hash
+    is ever invented; that is enforced here as 'present-and-well-formed', and at
+    review time as 'the named file in the cited bundle hashes to this value'."""
+    errs = []
+    if not isinstance(ev, dict) or not ev:
+        return [f"{name}: missing per-workload 'evidence' block (every measured workload must carry one)"]
+    if not ev.get("bundle"):
+        errs.append(f"{name}/evidence: must point at a 'bundle'")
+    if not HEX64.fullmatch(ev.get("evidence_json_sha256", "") or ""):
+        errs.append(f"{name}/evidence: evidence_json_sha256 must be 64 hex chars (the bundle's evidence.json or summary.json)")
+    notes = ev.get("notes", "") or ""
+    if not notes.strip():
+        errs.append(f"{name}/evidence: must carry a non-empty 'notes' provenance line")
+    for key in ("metal_csv_sha256", "cpu_csv_sha256", "profile_log_sha256"):
+        if key not in ev:
+            errs.append(f"{name}/evidence: missing '{key}' (use null with a reason in notes if the file is absent)")
+            continue
+        val = ev[key]
+        if val is None:
+            # A null is only honest if notes say why; require a non-trivial note.
+            if not notes.strip():
+                errs.append(f"{name}/evidence: {key} is null but notes does not explain why")
+        elif not HEX64.fullmatch(val):
+            errs.append(f"{name}/evidence: {key} must be 64 hex chars or null, got {val!r}")
+    return errs
 
 
 def load(path):
@@ -83,6 +118,8 @@ def structural_checks(path, doc):
                     errs.append(f"{name}/{lane}: receipt_verified must be true (an unverified run is not a result)")
                 if not isinstance(ln.get("median_ms"), (int, float)) or ln.get("median_ms", -1) < 0:
                     errs.append(f"{name}/{lane}: median_ms must be a non-negative number")
+            # Per-workload provenance: every measured row pins its own files.
+            errs.extend(workload_evidence_errs(name, w.get("evidence")))
             # speedup must match the row's own timings (no hand-entered ratio).
             try:
                 m = float(w["metal"]["median_ms"])

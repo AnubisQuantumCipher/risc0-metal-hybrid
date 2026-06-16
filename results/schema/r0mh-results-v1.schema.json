@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/AnubisQuantumCipher/risc0-metal-hybrid/results/schema/r0mh-results-v1.schema.json",
   "title": "r0mh-results-v1",
-  "description": "One machine's risc0-metal-hybrid benchmark contribution. Every measured timing MUST trace to a captured evidence bundle on the contributing machine; a machine that was not run carries status 'not_measured' and no timings.",
+  "description": "One machine's risc0-metal-hybrid benchmark contribution. Every measured timing MUST trace to a captured evidence bundle on the contributing machine; a machine that was not run carries status 'not_measured' and no timings. Each measured workload additionally carries a per-workload 'evidence' block that pins the exact CSV/log files behind that row's numbers (sha256), so a reader can trace any single number to a file, not just to a top-level pointer.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "chip", "chip_key", "status", "hardware", "os"],
@@ -57,28 +57,29 @@
     "bench_runs": { "type": "integer", "minimum": 1, "description": "Measured runs per lane (excludes the warm-up). The published M4 Max protocol used 8." },
     "workloads": {
       "type": "array",
-      "description": "One entry per workload, each carrying both lanes. Empty when status is 'not_measured'.",
+      "description": "One entry per workload, each carrying both lanes AND a per-workload evidence block. Empty when status is 'not_measured'.",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "metal", "cpu"],
+        "required": ["name", "metal", "cpu", "evidence"],
         "properties": {
           "name": { "type": "string", "description": "Workload id: hello | busy | hash | ecdsa | shaheavy | mempress | multiseg." },
           "segments": { "type": "integer", "minimum": 1, "description": "Segment count of the proof (structural property of the workload at the pinned knobs)." },
           "knobs": { "type": "object", "description": "Workload parameters in effect, e.g. {\"R0_HASH_ITERS\": \"512\"}." },
           "metal": { "$ref": "#/$defs/lane_result" },
           "cpu": { "$ref": "#/$defs/lane_result" },
-          "speedup": { "type": "number", "description": "cpu.median_ms / metal.median_ms, reported exactly as measured (may be near 1.0 for circuit-heavy guests)." }
+          "speedup": { "type": "number", "description": "cpu.median_ms / metal.median_ms, reported exactly as measured (may be near 1.0 for circuit-heavy guests)." },
+          "evidence": { "$ref": "#/$defs/workload_evidence" }
         }
       }
     },
     "evidence": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Pointer to the captured evidence bundle that backs every timing in this file.",
+      "description": "Top-level pointer to the primary captured evidence bundle for this file. When a file's rows span more than one bundle (e.g. a validate.sh suite plus a bench-adopter run), this points at the primary suite bundle and each workload's own 'evidence' block carries that row's exact provenance.",
       "properties": {
-        "bundle": { "type": "string", "description": "Relative path or release-asset name of the evidence bundle, e.g. 'evidence/20260614T...Z'." },
-        "evidence_json_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$", "description": "sha256 of the bundle's evidence.json." },
+        "bundle": { "type": "string", "description": "Relative path or release-asset name of the primary evidence bundle, e.g. 'evidence/20260614T...Z'." },
+        "evidence_json_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$", "description": "sha256 of the primary bundle's evidence.json." },
         "verdict": { "enum": ["PASS", "FAIL"] }
       }
     },
@@ -95,6 +96,20 @@
         "runs": { "type": "integer", "minimum": 1 },
         "receipt_verified": { "const": true, "description": "MUST be true. A run whose receipt did not verify is not a result — it is a failure to fix. The harness verifies + asserts the journal on every run." },
         "peak_rss_mb": { "type": "number", "minimum": 0 }
+      }
+    },
+    "workload_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Per-workload provenance: the exact captured files behind THIS workload's numbers. A reader hashes the named files in the cited bundle and compares. CSV/profile hashes are nullable ONLY when the file does not exist in that bundle (e.g. validate.sh profiles only `hello`); when null, 'notes' must say why and the row still anchors to the bundle's evidence JSON. No hash is ever invented.",
+      "required": ["bundle", "evidence_json_sha256", "metal_csv_sha256", "cpu_csv_sha256", "profile_log_sha256", "notes"],
+      "properties": {
+        "bundle": { "type": "string", "description": "Relative path or release-asset name of the bundle these timings came from, e.g. 'evidence/20260614T...Z' or 'evidence/adopter-20260615T...Z'." },
+        "evidence_json_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$", "description": "sha256 of the bundle's canonical machine-readable evidence JSON: 'evidence.json' for a scripts/validate.sh bundle, 'summary.json' for a scripts/bench-adopter.sh bundle. 'notes' states which one." },
+        "metal_csv_sha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$", "description": "sha256 of bench/<name>-metal.csv in the bundle (the metal-lane per-run CSV). null only if absent, with a reason in 'notes'." },
+        "cpu_csv_sha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$", "description": "sha256 of bench/<name>-cpu.csv in the bundle (the cpu-lane per-run CSV). null only if absent, with a reason in 'notes'." },
+        "profile_log_sha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$", "description": "sha256 of the per-phase profile log for this workload (logs/profile-<name>-metal.log). null only if absent, with a reason in 'notes'." },
+        "notes": { "type": "string", "description": "Short provenance note: which JSON anchors the bundle, why any hash is null, and which protocol/run the row came from." }
       }
     }
   },

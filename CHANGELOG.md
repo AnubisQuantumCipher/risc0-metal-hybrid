@@ -4,6 +4,54 @@ All notable changes to this project are documented here. This project pins a
 single RISC Zero toolchain (risc0-zkvm 3.0.5 / risc0-zkp 3.0.4 / rv32im circuit
 4.0.4); versions here track this repository, not RISC Zero.
 
+## [Unreleased] — A+ solo-readiness hardening
+
+Closes every maintainer-controlled credibility gap from the prior audit with
+code / docs / evidence, or bounds it explicitly. **No change to the proving
+lane's algorithmic behavior, and no broadened claim** — still pinned, still
+in-process-only, still one machine, recursion/lift/join and external `r0vm`
+still out of scope, and **third-party reproduction / external review still not
+claimed**. Not yet tagged; see [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
+
+### Added
+- **Per-workload evidence provenance.** `results/schema/r0mh-results-v1.schema.json`
+  now requires a per-workload `evidence` block (bundle, `evidence_json_sha256`,
+  `metal_csv_sha256`, `cpu_csv_sha256`, `profile_log_sha256` — nullable only with
+  a reason, `notes`), so a reader can trace a single number to a single file.
+  `scripts/validate-results.py` enforces it; `results/apple-m4-max.json` carries
+  real hashes for all seven workloads.
+- **Evidence manifests.** `scripts/hash-evidence.sh` writes a `MANIFEST.sha256`
+  over every file in a bundle (optional gpg `.asc`; never generates a key);
+  `scripts/verify-evidence-manifest.sh` re-checks it (and the signature).
+- **`scripts/check-risc0-zkp-invariants.sh`** — a machine **tripwire** for the
+  two cross-crate invariants (offset-0 buffers; per-op synchronous dispatch)
+  against the *pinned* risc0-zkp source. Fails closed on drift or a version
+  mismatch. Wired into `scripts/validate.sh` as the `risc0-zkp-invariants` check
+  and into CI. A tripwire, not a proof (REAUDIT.md still governs bumps).
+- **`scripts/stress.sh`** (`--quick` / `--overnight` / `--require-metal`) — a
+  chaos/soak suite that hammers the CPU↔GPU hand-off: alternating lanes,
+  multi-segment workloads, every run receipt-verified + journal-asserted + lane
+  asserted from the prover's own debug module paths. Emits
+  `evidence/stress-<UTC>/` with a manifest.
+- **Docs:** `WORKLOAD_MATRIX.md` (measured vs not-claimed across workloads/paths/
+  platforms), `ADOPTER_RISK.md` (blunt use/don't-use + soundness/availability/
+  maintenance/performance risk classes), `REVIEWER_PACKET.md` (architecture,
+  exact files, unsafe/FFI boundaries, reproduce commands, 6 reviewer questions —
+  soliciting review, none claimed), `upstream-rfc/` (draft release-3.0 backport
+  + stable-HAL-boundary proposal — not posted), `RELEASE_CHECKLIST.md`,
+  `A_PLUS_LEDGER.md`, `A_PLUS_FINAL_REPORT.md`.
+- **CI:** new `check-pins`, `check-risc0-zkp-invariants`, and `script-lint`
+  (bash -n + shellcheck-if-present + py_compile) jobs; the self-hosted Metal job
+  now also runs `stress.sh --quick --require-metal`. Hosted CI still does **not**
+  require Metal.
+
+### Changed
+- README restructured so the first screen states what this is / is not, the
+  frozen version envelope, the measured hardware, why the speedup is bounded,
+  the one-command reproduce, the risk/adopter links, and a "Validated where?"
+  table (hosted CI / self-hosted / release evidence / third-party: not yet
+  claimed). REAUDIT.md and SECURITY.md document the new invariant tripwire.
+
 ## [0.2.0] — 2026-06-12
 
 Industry-hardening release: every finding from the 2026-06-12 independent

@@ -70,10 +70,29 @@ evidence/<UTC>/
   logs/           # full stdout/stderr per check (RECEIPT VERIFIED markers, lane
                   #   module paths, the lane probe)
   bench/          # the raw per-lane CSVs: <workload>-<lane>.csv (run_ms,peak_rss_mb)
+  MANIFEST.sha256 # (after you run hash-evidence.sh) one sha256 per file above
+  MANIFEST.sha256.asc  # (optional) detached gpg signature over the manifest
 ```
 
 `evidence/` is gitignored — bundles are release/CI artifacts, not commits. Keep
-yours; you reference it (and its hash) in your result file.
+yours; you reference it (and its hashes) in your result file.
+
+### Make the bundle tamper-evident
+
+Hash the whole bundle into one manifest, then anyone can re-verify it:
+
+```bash
+scripts/hash-evidence.sh evidence/<UTC>          # writes evidence/<UTC>/MANIFEST.sha256
+scripts/verify-evidence-manifest.sh evidence/<UTC>   # shasum -a 256 -c, fails on any drift
+```
+
+`hash-evidence.sh` writes one `sha256  relative/path` line for every file in the
+bundle and prints the manifest's own sha256 (the single bundle anchor). If you
+have a gpg secret key it also writes `MANIFEST.sha256.asc` (a detached
+signature); with no key it prints an "unsigned" warning and still succeeds — it
+never generates or imports a key. When you submit, **include `MANIFEST.sha256`
+(and `MANIFEST.sha256.asc` if you signed) in the bundle**, and prefer attaching
+the bundle as a GitHub release asset so the attachment itself is attested.
 
 ## Submit a result
 
@@ -92,8 +111,21 @@ yours; you reference it (and its hash) in your result file.
      `receipt_verified: true`, and the `speedup` exactly as measured — including
      near-1× on circuit-heavy guests, which is the expected eval_check floor,
      not a failure;
-   - `evidence.bundle` + `evidence.evidence_json_sha256`
-     (`shasum -a 256 evidence/<UTC>/evidence.json`).
+   - a per-workload `evidence` block on **each** workload entry — this is what
+     lets a reader trace a single number to a single file, not just to a
+     top-level pointer. Fill it from your bundle:
+     - `bundle`: `evidence/<UTC>` (the directory the run wrote);
+     - `evidence_json_sha256`: `shasum -a 256 evidence/<UTC>/evidence.json`;
+     - `metal_csv_sha256`: `shasum -a 256 evidence/<UTC>/bench/<name>-metal.csv`;
+     - `cpu_csv_sha256`: `shasum -a 256 evidence/<UTC>/bench/<name>-cpu.csv`;
+     - `profile_log_sha256`: `shasum -a 256 evidence/<UTC>/logs/profile-<name>-metal.log`
+       — `validate.sh` profiles only `hello`, so for any other workload this
+       file does not exist; set the field to `null` and say so in `notes`. Never
+       put a hash here that you did not compute from a file on disk.
+     - `notes`: a one-line provenance note (which JSON anchors the bundle, why
+       any hash is null, which protocol/run).
+   - the top-level `evidence.bundle` + `evidence.evidence_json_sha256` (same
+     `shasum -a 256 evidence/<UTC>/evidence.json`) as the file's headline pointer.
 4. Validate it: `python3 scripts/validate-results.py results/<chip_key>.json`.
 5. Open a PR titled `results: <chip>` and attach your evidence bundle (zip it;
    bundles are gitignored, so include it as a PR attachment or a release asset).
