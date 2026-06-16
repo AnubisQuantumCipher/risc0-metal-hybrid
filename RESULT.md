@@ -8,6 +8,19 @@ end (or in one shot with `./scripts/validate.sh`). The
 carries the full machine-readable evidence bundle for that suite — 26 checks,
 0 failures, 0 skips at the release tree — as a release asset.
 
+> **v0.3.0 update (2026-06-16).** `hello`/`hash`/`busy` were re-measured on the
+> v0.3.0 release tree (`master` @ `a884a158`) with `scripts/validate.sh --full
+> --require-metal` (**PASS 34/0/0**, 1 warm-up + 8 serial runs/lane, receipt
+> verified + journal asserted each run): **1.638× / 1.748× / 1.739×** (799.6 ms
+> vs 1310.1 ms; 61.98 s vs 108.35 s; 150.09 s vs 261.02 s). These differ from the
+> v0.2.0 figures below only by run-to-run variance; the structural conclusions
+> (the eval_check CPU floor bounds the speedup) are unchanged, so the detailed
+> phase-attribution tables in this document are kept as the original 2026-06-11/12
+> measurement. The authoritative machine-readable numbers — and the four adopter
+> workloads, unchanged — are in
+> [results/apple-m4-max.json](results/apple-m4-max.json), each with a
+> per-workload evidence hash.
+
 ## What this is
 
 risc0 v3.0.5 proves entirely on the CPU on Apple Silicon in every stock

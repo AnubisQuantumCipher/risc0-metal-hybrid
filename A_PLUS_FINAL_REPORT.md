@@ -95,16 +95,19 @@ hashes in `results/` and the manifests are what a reader verifies against.)
 
 ## Exact next human actions
 
-1. Review this branch's PR. If satisfied, merge to `master`.
-2. (Optional, before tagging) run the full release protocol on the M4 Max:
-   `R0_VALIDATE_BENCH_RUNS=8 ./scripts/validate.sh --full --require-metal`, then
-   `hash-evidence.sh` the bundle and update `results/apple-m4-max.json` per
-   `RELEASE_CHECKLIST.md`.
-3. Tag **v0.3.0** only when every box in `RELEASE_CHECKLIST.md` is ticked; attach
-   the evidence bundle(s) (with `MANIFEST.sha256`, signed if a key exists).
-4. When ready, **re-verify and then post** the `upstream-rfc/` material to
-   RISC Zero (human action — re-check every `risc0#…` reference live first).
-5. Solicit one independent Apple-Silicon reproduction and one external review;
+1. ✅ Done (2026-06-16): PR #5 merged to `master` (`a884a158`); CodeRabbit's two
+   findings fixed before merge; the full release re-measure
+   (`R0_VALIDATE_BENCH_RUNS=8 validate.sh --full --require-metal`) ran **PASS
+   34/0/0** on the release tree and `results/apple-m4-max.json` now carries the
+   release-tree hello/hash/busy numbers + hashes. A small release PR carries the
+   CHANGELOG `[0.3.0]` + refreshed results/docs.
+2. **Publish the v0.3.0 GitHub release** (human click): once the release PR
+   merges, publish the pre-staged draft (tag `v0.3.0`, notes, the
+   `r0mh-v0.3.0-evidence-m4max.zip` evidence bundle with `MANIFEST.sha256`
+   attached). The agent stages it; the operator presses Publish.
+3. **Post the `upstream-rfc/`** to RISC Zero (human click) — re-verify every
+   `risc0#…` reference live first.
+4. Solicit one independent Apple-Silicon reproduction and one external review;
    when they land, update the "Validated where?" table — and only then.
 
 ---
