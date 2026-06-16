@@ -32,6 +32,13 @@ WORKLOAD_IDS = {"hello", "busy", "hash", "ecdsa", "shaheavy", "mempress", "multi
 HEX64 = re.compile(r"[a-f0-9]{64}")
 
 
+def is_hex64(v):
+    """True iff v is a 64-char lowercase-hex string. Type-guards before the
+    regex so a non-string (e.g. a JSON number) yields a clean validation error
+    rather than a TypeError from fullmatch()."""
+    return isinstance(v, str) and HEX64.fullmatch(v) is not None
+
+
 def workload_evidence_errs(name, ev):
     """Per-workload provenance invariants the schema cannot fully express: the
     row must point at a bundle, carry a 64-hex evidence-JSON hash, and carry the
@@ -44,7 +51,7 @@ def workload_evidence_errs(name, ev):
         return [f"{name}: missing per-workload 'evidence' block (every measured workload must carry one)"]
     if not ev.get("bundle"):
         errs.append(f"{name}/evidence: must point at a 'bundle'")
-    if not HEX64.fullmatch(ev.get("evidence_json_sha256", "") or ""):
+    if not is_hex64(ev.get("evidence_json_sha256")):
         errs.append(f"{name}/evidence: evidence_json_sha256 must be 64 hex chars (the bundle's evidence.json or summary.json)")
     notes = ev.get("notes", "") or ""
     if not notes.strip():
@@ -58,7 +65,7 @@ def workload_evidence_errs(name, ev):
             # A null is only honest if notes say why; require a non-trivial note.
             if not notes.strip():
                 errs.append(f"{name}/evidence: {key} is null but notes does not explain why")
-        elif not HEX64.fullmatch(val):
+        elif not is_hex64(val):
             errs.append(f"{name}/evidence: {key} must be 64 hex chars or null, got {val!r}")
     return errs
 

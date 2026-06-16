@@ -36,17 +36,20 @@ fi
 if [ -f MANIFEST.sha256.asc ]; then
   if command -v gpg >/dev/null 2>&1; then
     echo "== signature =="
-    if gpg --verify MANIFEST.sha256.asc MANIFEST.sha256 2>&1; then
+    # Run gpg ONCE and capture output + status directly. (Do not pipe gpg into
+    # grep to classify the failure: under `set -o pipefail` the pipeline's status
+    # reflects gpg's non-zero exit, so a "No public key" grep match would still
+    # evaluate false and mask the missing-key case as a hard failure.)
+    gpg_out="$(gpg --verify MANIFEST.sha256.asc MANIFEST.sha256 2>&1)"
+    gpg_rc=$?
+    printf '%s\n' "$gpg_out"
+    if [ "$gpg_rc" -eq 0 ]; then
       echo "OK: gpg signature verified"
+    elif printf '%s' "$gpg_out" | grep -qi "No public key"; then
+      echo "WARNING: signer's public key not in this keyring; signature NOT verified." >&2
     else
-      rc=$?
-      # gpg returns non-zero both for a BAD signature and for "no public key".
-      if gpg --verify MANIFEST.sha256.asc MANIFEST.sha256 2>&1 | grep -qi "No public key"; then
-        echo "WARNING: signer's public key not in this keyring; signature NOT verified." >&2
-      else
-        echo "FAIL: gpg signature did NOT verify" >&2
-        exit 1
-      fi
+      echo "FAIL: gpg signature did NOT verify" >&2
+      exit 1
     fi
   else
     echo "note: MANIFEST.sha256.asc present but gpg not installed; checksums verified, signature not." >&2
